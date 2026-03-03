@@ -24,8 +24,11 @@ A multi-bot control panel for automating navigation in Mozilla Hubs instances. U
 ## Features
 - **Multi-Bot**: Two bots run independently with separate Chromium instances, entering the same room
 - **Bot-to-Bot Chat**: Bots detect each other's messages and respond with rate limiting to avoid loops
+- **AI Chat Responses**: Uses OpenAI (via Replit AI Integrations) for contextual, conversation-aware replies
+- **Conversation History**: Each bot maintains a rolling 20-message history for context in AI responses
+- **Entrance Greetings**: Bots send a greeting immediately upon entering the room
+- **Chat via Hubs API**: Messages sent directly via `window.APP.hubChannel.sendMessage()` — no UI interaction needed
 - **Auto-Navigation**: Random walking, turning, jumping, and chat; starts after room entry
-- **Conversational Responses**: Classifies incoming chat (greeting/question/compliment/farewell/etc.) and responds
 - **Manual Controls**: Per-bot WASD movement, camera look, jump via dashboard
 - **Screenshots**: Capture what each bot sees independently
 - **Start/Stop All**: Global controls to launch or stop both bots at once
@@ -54,4 +57,5 @@ A multi-bot control panel for automating navigation in Mozilla Hubs instances. U
 
 ## Dependencies
 - `puppeteer-core` - Browser automation
+- `openai` - AI chat responses via Replit AI Integrations (env: `AI_INTEGRATIONS_OPENAI_API_KEY`, `AI_INTEGRATIONS_OPENAI_BASE_URL`)
 - System: `chromium` + various X11/graphics libs via Nix

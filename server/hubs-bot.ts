@@ -1,7 +1,13 @@
 import puppeteer, { type Browser, type Page } from "puppeteer-core";
+import OpenAI from "openai";
 import { storage } from "./storage";
 import type { BotStatus } from "@shared/schema";
 import { log } from "./index";
+
+const openai = new OpenAI({
+  apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+  baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
+});
 
 const CHROMIUM_PATH = "/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium";
 const HUBS_BASE_URL = "https://worlds.orangeweb3.com";
@@ -103,6 +109,50 @@ function getConversationalResponse(message: string): string {
   return responses[Math.floor(Math.random() * responses.length)];
 }
 
+const BOT_SYSTEM_PROMPT = `You are a friendly, casual bot exploring a 3D virtual world called "Juice Town" on Mozilla Hubs. You're hanging out with other people and bots in this virtual space. Keep your responses short (1-2 sentences max), natural, and conversational — like texting a friend. Don't be overly enthusiastic or use too many exclamation marks. Feel free to ask follow-up questions, make observations about the virtual world, or just chat casually. Never mention that you're an AI or a language model.`;
+
+async function getAIResponse(
+  message: string,
+  author: string,
+  conversationHistory: { role: string; content: string }[],
+  botName: string
+): Promise<string> {
+  try {
+    const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
+      { role: "system", content: `${BOT_SYSTEM_PROMPT}\nYour name in this world is "${botName}".` },
+    ];
+
+    for (const msg of conversationHistory.slice(-10)) {
+      messages.push({
+        role: msg.role as "user" | "assistant",
+        content: msg.content,
+      });
+    }
+
+    messages.push({ role: "user", content: `${author} says: "${message}"` });
+
+    const response = await openai.chat.completions.create({
+      model: "gpt-4o-mini",
+      messages,
+      max_tokens: 100,
+      temperature: 0.9,
+    });
+
+    let reply = response.choices[0]?.message?.content?.trim() || "";
+    if (botName && reply.toLowerCase().startsWith(botName.toLowerCase() + ":")) {
+      reply = reply.slice(botName.length + 1).trim();
+    }
+    reply = reply.replace(/^["']|["']$/g, "").trim();
+    if (reply && reply.length > 0 && reply.length < 200) {
+      return reply;
+    }
+    return getConversationalResponse(message);
+  } catch (err: any) {
+    console.error(`AI response error: ${err.message}`);
+    return getConversationalResponse(message);
+  }
+}
+
 export interface BotCredentials {
   email: string;
   password: string;
@@ -126,6 +176,7 @@ export class HubsBot {
   private lastChatResponseTime: number = 0;
   private botDisplayName: string = "";
   private otherBotNames: string[] = [];
+  private conversationHistory: { role: string; content: string }[] = [];
 
   constructor(botId: string, credentials: BotCredentials) {
     this.botId = botId;
@@ -1114,7 +1165,12 @@ export class HubsBot {
           : 500 + Math.floor(Math.random() * 1500);
         await new Promise(resolve => setTimeout(resolve, replyDelay));
 
-        const response = getConversationalResponse(msg.text);
+        const response = await getAIResponse(msg.text, msg.author, this.conversationHistory, this.botDisplayName);
+        this.conversationHistory.push({ role: "user", content: `${msg.author}: ${msg.text}` });
+        this.conversationHistory.push({ role: "assistant", content: response });
+        if (this.conversationHistory.length > 20) {
+          this.conversationHistory = this.conversationHistory.slice(-20);
+        }
         await this.sendChat(response);
         this.lastChatResponseTime = Date.now();
       }
