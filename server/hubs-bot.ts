@@ -7,19 +7,10 @@ const CHROMIUM_PATH = "/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.
 const HUBS_BASE_URL = "https://worlds.orangeweb3.com";
 const BEDROCK_API_URL = "https://api.bedrockpassport.com/orange/v1";
 
-interface ActiveKeys {
-  w: boolean;
-  a: boolean;
-  s: boolean;
-  d: boolean;
-}
-
 export class HubsBot {
   private browser: Browser | null = null;
   private page: Page | null = null;
   private authToken: string | null = null;
-  private activeKeys: ActiveKeys = { w: false, a: false, s: false, d: false };
-  private movementInterval: ReturnType<typeof setInterval> | null = null;
   private statusListeners: Set<(status: BotStatus) => void> = new Set();
   private starting: boolean = false;
 
@@ -95,7 +86,6 @@ export class HubsBot {
           "--no-zygote",
           "--single-process",
           "--disable-extensions",
-          "--disable-background-networking",
           "--disable-web-security",
           "--allow-running-insecure-content",
           "--autoplay-policy=no-user-gesture-required",
@@ -109,6 +99,8 @@ export class HubsBot {
       await this.page.setUserAgent(
         "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/125.0.0.0 Safari/537.36"
       );
+      await this.page.setDefaultNavigationTimeout(120000);
+      await this.page.setDefaultTimeout(30000);
 
       this.page.on("console", (msg) => {
         const text = msg.text();
@@ -138,31 +130,40 @@ export class HubsBot {
 
     try {
       await this.page.goto(targetUrl, {
-        waitUntil: "networkidle2",
-        timeout: 60000,
+        waitUntil: "domcontentloaded",
+        timeout: 120000,
       });
+
+      await this.updateStatus("logging_in", "Page loaded, waiting for app to initialize...");
+      await this.waitForHubsReady();
 
       await this.updateStatus("logging_in", "Setting auth token...");
 
-      await this.page.evaluate((token: string) => {
-        localStorage.setItem("___hubs_store", JSON.stringify({
-          credentials: {
-            token: token,
-            email: "bot1234@automation.com",
-          },
-        }));
+      const email = process.env.HUBS_BOT_EMAIL || "";
+      await this.page.evaluate((token: string, botEmail: string) => {
         try {
-          (window as any).__store?.update({ credentials: { token, email: "bot1234@automation.com" } });
+          const existingStore = localStorage.getItem("___hubs_store");
+          const store = existingStore ? JSON.parse(existingStore) : {};
+          store.credentials = { token, email: botEmail };
+          localStorage.setItem("___hubs_store", JSON.stringify(store));
+        } catch (e) {
+          localStorage.setItem("___hubs_store", JSON.stringify({
+            credentials: { token, email: botEmail },
+          }));
+        }
+        try {
+          (window as any).__store?.update({ credentials: { token, email: botEmail } });
         } catch (e) {}
-      }, this.authToken);
+      }, this.authToken, email);
 
-      await this.page.reload({ waitUntil: "networkidle2", timeout: 60000 });
+      await this.updateStatus("logging_in", "Auth token set, reloading page...");
 
-      await new Promise(resolve => setTimeout(resolve, 5000));
+      await this.page.reload({ waitUntil: "domcontentloaded", timeout: 120000 });
+      await this.waitForHubsReady();
 
       const pageTitle = await this.page.title();
       const currentUrl = this.page.url();
-      await this.updateStatus("connected", `Connected to Hubs! Page: "${pageTitle}" URL: ${currentUrl}`, currentUrl);
+      await this.updateStatus("connected", `Connected! Page: "${pageTitle}" URL: ${currentUrl}`, currentUrl);
 
       await this.tryEnterRoom();
     } catch (err: any) {
@@ -171,31 +172,103 @@ export class HubsBot {
     }
   }
 
+  private async waitForHubsReady(): Promise<void> {
+    if (!this.page) return;
+
+    await storage.addLog("Waiting for Hubs app to initialize...");
+
+    for (let i = 0; i < 30; i++) {
+      await new Promise(resolve => setTimeout(resolve, 2000));
+
+      const ready = await this.page.evaluate(() => {
+        const hasCanvas = !!document.querySelector("canvas");
+        const hasAframe = !!(document as any).querySelector("a-scene");
+        const hasUI = !!document.querySelector("button");
+        return { hasCanvas, hasAframe, hasUI };
+      });
+
+      await storage.addLog(`Check ${i + 1}/30: canvas=${ready.hasCanvas} aframe=${ready.hasAframe} ui=${ready.hasUI}`);
+
+      if (ready.hasCanvas || ready.hasAframe) {
+        await storage.addLog("Hubs app detected! Waiting a few more seconds for full load...");
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        return;
+      }
+
+      if (ready.hasUI && i >= 3) {
+        await storage.addLog("UI buttons detected, proceeding...");
+        await new Promise(resolve => setTimeout(resolve, 3000));
+        return;
+      }
+    }
+
+    await storage.addLog("Timed out waiting for Hubs, proceeding anyway...");
+  }
+
   private async tryEnterRoom(): Promise<void> {
     if (!this.page) return;
 
     try {
       await new Promise(resolve => setTimeout(resolve, 3000));
 
-      const enterButton = await this.page.$('button[class*="enter"], button[data-testid*="enter"], a[class*="enter"]');
-      if (enterButton) {
-        await enterButton.click();
-        await this.updateStatus("connected", "Clicked enter button");
-        await new Promise(resolve => setTimeout(resolve, 3000));
+      const pageContent = await this.page.evaluate(() => {
+        const buttons = Array.from(document.querySelectorAll("button"));
+        return buttons.map(b => ({ text: b.textContent?.trim() || "", classes: b.className })).slice(0, 20);
+      });
+      await storage.addLog(`Found ${pageContent.length} buttons: ${pageContent.map(b => b.text).filter(Boolean).join(", ")}`);
+
+      for (const selector of [
+        'button[class*="enter"]',
+        'button[class*="Enter"]',
+        'button[data-testid*="enter"]',
+        'a[class*="enter"]',
+      ]) {
+        const el = await this.page.$(selector);
+        if (el) {
+          await el.click();
+          await this.updateStatus("connected", `Clicked: ${selector}`);
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          break;
+        }
       }
 
-      const joinButton = await this.page.$('button[class*="join"], button[data-testid*="join"]');
-      if (joinButton) {
-        await joinButton.click();
-        await this.updateStatus("connected", "Clicked join button");
-        await new Promise(resolve => setTimeout(resolve, 3000));
+      for (const selector of [
+        'button[class*="join"]',
+        'button[class*="Join"]',
+        'button[data-testid*="join"]',
+      ]) {
+        const el = await this.page.$(selector);
+        if (el) {
+          await el.click();
+          await this.updateStatus("connected", `Clicked: ${selector}`);
+          await new Promise(resolve => setTimeout(resolve, 3000));
+          break;
+        }
       }
 
-      const acceptButton = await this.page.$('button[class*="accept"], button[class*="continue"], button[class*="agree"]');
-      if (acceptButton) {
-        await acceptButton.click();
-        await this.updateStatus("connected", "Accepted terms/dialog");
-        await new Promise(resolve => setTimeout(resolve, 2000));
+      for (const selector of [
+        'button[class*="accept"]',
+        'button[class*="continue"]',
+        'button[class*="agree"]',
+        'button[class*="Connect"]',
+      ]) {
+        const el = await this.page.$(selector);
+        if (el) {
+          await el.click();
+          await this.updateStatus("connected", `Clicked: ${selector}`);
+          await new Promise(resolve => setTimeout(resolve, 2000));
+          break;
+        }
+      }
+
+      const buttons = await this.page.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll("button"));
+        return btns
+          .map(b => b.textContent?.trim() || "")
+          .filter(t => t.length > 0 && t.length < 30);
+      });
+      if (buttons.length > 0) {
+        await storage.addLog(`Remaining buttons on page: ${buttons.join(", ")}`);
       }
     } catch (err: any) {
       await storage.addLog(`Room entry attempt: ${err.message}`);
@@ -208,8 +281,8 @@ export class HubsBot {
     }
 
     await this.updateStatus("navigating", `Entering room: ${roomUrl}`, roomUrl);
-    await this.page.goto(roomUrl, { waitUntil: "networkidle2", timeout: 60000 });
-    await new Promise(resolve => setTimeout(resolve, 5000));
+    await this.page.goto(roomUrl, { waitUntil: "domcontentloaded", timeout: 120000 });
+    await this.waitForHubsReady();
     await this.tryEnterRoom();
     await this.updateStatus("connected", `In room: ${roomUrl}`, roomUrl);
   }
@@ -288,11 +361,7 @@ export class HubsBot {
   }
 
   async stop(preserveError = false): Promise<void> {
-    await this.stopMovement();
-    if (this.movementInterval) {
-      clearInterval(this.movementInterval);
-      this.movementInterval = null;
-    }
+    await this.stopMovement().catch(() => {});
     if (this.browser) {
       await this.browser.close().catch(() => {});
       this.browser = null;
@@ -313,6 +382,7 @@ export class HubsBot {
       await this.loginToHubs(roomUrl);
       this.starting = false;
     } catch (err: any) {
+      this.starting = false;
       await this.updateStatus("error", `Bot start failed: ${err.message}`);
       await this.stop(true).catch(() => {});
       throw err;
