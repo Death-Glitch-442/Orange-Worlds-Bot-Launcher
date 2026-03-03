@@ -219,7 +219,63 @@ export class HubsBot {
       }, this.authToken, email);
 
       await this.updateStatus("logging_in", "Auth token set in localStorage, reloading...");
+
+      const emailForReload = email;
+      const tokenForReload = this.authToken;
+      await this.page.evaluateOnNewDocument((token: string, botEmail: string) => {
+        try {
+          const existingStore = localStorage.getItem("___hubs_store");
+          const store = existingStore ? JSON.parse(existingStore) : {};
+          store.credentials = { token, email: botEmail };
+          localStorage.setItem("___hubs_store", JSON.stringify(store));
+        } catch {
+          localStorage.setItem("___hubs_store", JSON.stringify({
+            credentials: { token, email: botEmail },
+          }));
+        }
+      }, tokenForReload, emailForReload);
+
       await this.page.reload({ waitUntil: "domcontentloaded", timeout: 120000 });
+
+      await this.page.evaluate((token: string, botEmail: string) => {
+        try {
+          const existingStore = localStorage.getItem("___hubs_store");
+          const store = existingStore ? JSON.parse(existingStore) : {};
+          store.credentials = { token, email: botEmail };
+          localStorage.setItem("___hubs_store", JSON.stringify(store));
+        } catch {
+          localStorage.setItem("___hubs_store", JSON.stringify({
+            credentials: { token, email: botEmail },
+          }));
+        }
+      }, tokenForReload, emailForReload);
+
+      const tokenCheck = await this.page.evaluate(() => {
+        try {
+          const store = JSON.parse(localStorage.getItem("___hubs_store") || "{}");
+          return {
+            hasToken: !!store.credentials?.token,
+            tokenLength: store.credentials?.token?.length || 0,
+            credKeys: Object.keys(store.credentials || {}),
+          };
+        } catch { return { hasToken: false, tokenLength: 0, credKeys: [] }; }
+      });
+      await storage.addLog(`Token check after reload: hasToken=${tokenCheck.hasToken}, length=${tokenCheck.tokenLength}, keys=${tokenCheck.credKeys.join(",")}`);
+
+      if (!tokenCheck.hasToken) {
+        await storage.addLog("Token was lost after reload, re-setting and reloading again...");
+        await this.page.evaluate((token: string, botEmail: string) => {
+          localStorage.setItem("___hubs_store", JSON.stringify({
+            credentials: { token, email: botEmail },
+          }));
+        }, tokenForReload, emailForReload);
+        await this.page.reload({ waitUntil: "domcontentloaded", timeout: 120000 });
+        await this.page.evaluate((token: string, botEmail: string) => {
+          localStorage.setItem("___hubs_store", JSON.stringify({
+            credentials: { token, email: botEmail },
+          }));
+        }, tokenForReload, emailForReload);
+      }
 
       await this.updateStatus("logging_in", "Waiting for Hubs UI to fully load...");
       await this.waitForLobbyUI();
@@ -397,6 +453,53 @@ export class HubsBot {
     return clicked;
   }
 
+  private async reInjectToken(): Promise<void> {
+    if (!this.page || !this.authToken) return;
+    const email = process.env.HUBS_BOT_EMAIL || "";
+    await this.page.evaluate((token: string, botEmail: string) => {
+      try {
+        const existingStore = localStorage.getItem("___hubs_store");
+        const store = existingStore ? JSON.parse(existingStore) : {};
+        store.credentials = { token, email: botEmail };
+        localStorage.setItem("___hubs_store", JSON.stringify(store));
+      } catch {
+        localStorage.setItem("___hubs_store", JSON.stringify({
+          credentials: { token, email: botEmail },
+        }));
+      }
+    }, this.authToken, email);
+  }
+
+  private async handleSigninRedirect(): Promise<boolean> {
+    if (!this.page) return false;
+    const currentUrl = this.page.url();
+    if (currentUrl.includes("/signin")) {
+      await storage.addLog("Detected redirect to /signin — re-injecting token and navigating back...");
+      await this.reInjectToken();
+
+      const email = process.env.HUBS_BOT_EMAIL || "";
+      await this.page.evaluateOnNewDocument((token: string, botEmail: string) => {
+        try {
+          const existingStore = localStorage.getItem("___hubs_store");
+          const store = existingStore ? JSON.parse(existingStore) : {};
+          store.credentials = { token, email: botEmail };
+          localStorage.setItem("___hubs_store", JSON.stringify(store));
+        } catch {
+          localStorage.setItem("___hubs_store", JSON.stringify({
+            credentials: { token, email: botEmail },
+          }));
+        }
+      }, this.authToken!, email);
+
+      const targetUrl = this.roomUrl || HUBS_BASE_URL;
+      await this.page.goto(targetUrl, { waitUntil: "domcontentloaded", timeout: 120000 });
+      await this.reInjectToken();
+      await this.waitForLobbyUI();
+      return true;
+    }
+    return false;
+  }
+
   private async tryEnterRoom(): Promise<void> {
     if (!this.page) return;
 
@@ -411,10 +514,20 @@ export class HubsBot {
       if (clicked1) {
         await this.updateStatus("logging_in", "Clicked Join Room, waiting for avatar screen...");
         await new Promise(resolve => setTimeout(resolve, 4000));
+
+        const redirected = await this.handleSigninRedirect();
+        if (redirected) {
+          const clicked1b = await this.clickButtonByText(["join room", "join"]);
+          if (clicked1b) {
+            await this.updateStatus("logging_in", "Clicked Join Room (retry), waiting for avatar screen...");
+            await new Promise(resolve => setTimeout(resolve, 4000));
+          }
+        }
+
         await this.autoScreenshot("after-join");
       } else {
         await storage.addLog("No Join Room button found, checking for other entry points...");
-        const altClick = await this.clickButtonByText(["enter room", "enter", "connect"]);
+        const altClick = await this.clickButtonByText(["enter room", "enter"]);
         if (altClick) {
           await new Promise(resolve => setTimeout(resolve, 4000));
         } else {
@@ -423,8 +536,11 @@ export class HubsBot {
         }
       }
 
+      // Check for signin redirect again after Join
+      await this.handleSigninRedirect();
+
       // Step 2: Click "Accept" on the avatar/name configuration screen
-      await this.waitForButton(["accept"], 10);
+      await this.waitForButton(["accept"], 15);
       const clicked2 = await this.clickButtonByText(["accept"]);
       if (clicked2) {
         await this.updateStatus("logging_in", "Accepted avatar settings, waiting for entry screen...");
@@ -433,7 +549,7 @@ export class HubsBot {
       }
 
       // Step 3: Click "Enter Room" to actually join the 3D space
-      await this.waitForButton(["enter room"], 10);
+      await this.waitForButton(["enter room"], 15);
       const clicked3 = await this.clickButtonByText(["enter room"]);
       if (clicked3) {
         await this.updateStatus("connected", "Entered the room!");
