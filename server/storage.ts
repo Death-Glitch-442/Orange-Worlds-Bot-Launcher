@@ -1,48 +1,60 @@
 import type { BotStatus } from "@shared/schema";
 
 export interface IStorage {
-  getBotStatus(): Promise<BotStatus>;
-  setBotStatus(status: BotStatus): Promise<void>;
-  getLogs(): Promise<string[]>;
-  addLog(message: string): Promise<void>;
+  getBotStatus(botId: string): Promise<BotStatus>;
+  setBotStatus(botId: string, status: BotStatus): Promise<void>;
+  getLogs(botId: string): Promise<string[]>;
+  addLog(botId: string, message: string): Promise<void>;
+  getAllBotIds(): string[];
 }
 
 export class MemStorage implements IStorage {
-  private botStatus: BotStatus;
-  private logs: string[];
+  private botStatuses: Map<string, BotStatus> = new Map();
+  private botLogs: Map<string, string[]> = new Map();
 
-  constructor() {
-    this.botStatus = {
-      status: "idle",
-      message: "Bot is idle",
-      timestamp: Date.now(),
-    };
-    this.logs = [];
+  private ensureBot(botId: string) {
+    if (!this.botStatuses.has(botId)) {
+      this.botStatuses.set(botId, {
+        status: "idle",
+        message: "Bot is idle",
+        timestamp: Date.now(),
+      });
+      this.botLogs.set(botId, []);
+    }
   }
 
-  async getBotStatus(): Promise<BotStatus> {
-    return this.botStatus;
+  async getBotStatus(botId: string): Promise<BotStatus> {
+    this.ensureBot(botId);
+    return this.botStatuses.get(botId)!;
   }
 
-  async setBotStatus(status: BotStatus): Promise<void> {
-    this.botStatus = status;
+  async setBotStatus(botId: string, status: BotStatus): Promise<void> {
+    this.ensureBot(botId);
+    this.botStatuses.set(botId, status);
   }
 
-  async getLogs(): Promise<string[]> {
-    return this.logs.slice(-100);
+  async getLogs(botId: string): Promise<string[]> {
+    this.ensureBot(botId);
+    return (this.botLogs.get(botId) || []).slice(-100);
   }
 
-  async addLog(message: string): Promise<void> {
+  async addLog(botId: string, message: string): Promise<void> {
+    this.ensureBot(botId);
+    const logs = this.botLogs.get(botId)!;
     const timestamp = new Date().toLocaleTimeString("en-US", {
       hour: "numeric",
       minute: "2-digit",
       second: "2-digit",
       hour12: true,
     });
-    this.logs.push(`[${timestamp}] ${message}`);
-    if (this.logs.length > 200) {
-      this.logs = this.logs.slice(-100);
+    logs.push(`[${timestamp}] ${message}`);
+    if (logs.length > 200) {
+      this.botLogs.set(botId, logs.slice(-100));
     }
+  }
+
+  getAllBotIds(): string[] {
+    return Array.from(this.botStatuses.keys());
   }
 }
 

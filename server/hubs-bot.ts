@@ -92,7 +92,15 @@ function getConversationalResponse(message: string): string {
   return responses[Math.floor(Math.random() * responses.length)];
 }
 
+export interface BotCredentials {
+  email: string;
+  password: string;
+  apiKey: string;
+}
+
 export class HubsBot {
+  public readonly botId: string;
+  private credentials: BotCredentials;
   private browser: Browser | null = null;
   private page: Page | null = null;
   private authToken: string | null = null;
@@ -106,6 +114,20 @@ export class HubsBot {
   private seenChatMessages: Set<string> = new Set();
   private lastChatResponseTime: number = 0;
   private botDisplayName: string = "";
+  private otherBotNames: string[] = [];
+
+  constructor(botId: string, credentials: BotCredentials) {
+    this.botId = botId;
+    this.credentials = credentials;
+  }
+
+  setOtherBotNames(names: string[]) {
+    this.otherBotNames = names;
+  }
+
+  getDisplayName(): string {
+    return this.botDisplayName;
+  }
 
   onStatusChange(listener: (status: BotStatus) => void) {
     this.statusListeners.add(listener);
@@ -119,9 +141,9 @@ export class HubsBot {
       roomUrl,
       timestamp: Date.now(),
     };
-    await storage.setBotStatus(botStatus);
-    await storage.addLog(message);
-    log(message, "hubs-bot");
+    await storage.setBotStatus(this.botId, botStatus);
+    await storage.addLog(this.botId, message);
+    log(message, `bot-${this.botId}`);
     for (const listener of this.statusListeners) {
       listener(botStatus);
     }
@@ -132,17 +154,15 @@ export class HubsBot {
     try {
       const screenshot = await this.page.screenshot({ encoding: "base64", type: "jpeg", quality: 50 });
       this.lastScreenshot = `data:image/jpeg;base64,${screenshot}`;
-      await storage.addLog(`[screenshot taken: ${label}]`);
+      await storage.addLog(this.botId, `[screenshot taken: ${label}]`);
     } catch {}
   }
 
   async authenticate(): Promise<string> {
-    const email = process.env.HUBS_BOT_EMAIL;
-    const password = process.env.HUBS_BOT_PASSWORD;
-    const apiKey = process.env.BEDROCK_API_KEY;
+    const { email, password, apiKey } = this.credentials;
 
     if (!email || !password || !apiKey) {
-      throw new Error("Missing bot credentials in environment variables");
+      throw new Error("Missing bot credentials");
     }
 
     await this.updateStatus("authenticating", "Authenticating with Bedrock API...");
@@ -162,19 +182,19 @@ export class HubsBot {
     }
 
     const data = await response.json() as any;
-    await storage.addLog(`Auth response keys: ${JSON.stringify(Object.keys(data))}`);
+    await storage.addLog(this.botId, `Auth response keys: ${JSON.stringify(Object.keys(data))}`);
     
     if (data.token) {
-      await storage.addLog(`data.token type: ${typeof data.token}`);
+      await storage.addLog(this.botId, `data.token type: ${typeof data.token}`);
       if (typeof data.token === "object") {
-        await storage.addLog(`data.token keys: ${JSON.stringify(Object.keys(data.token))}`);
-        await storage.addLog(`data.token preview: ${JSON.stringify(data.token).slice(0, 300)}`);
+        await storage.addLog(this.botId, `data.token keys: ${JSON.stringify(Object.keys(data.token))}`);
+        await storage.addLog(this.botId, `data.token preview: ${JSON.stringify(data.token).slice(0, 300)}`);
       }
     }
     if (data.user) {
-      await storage.addLog(`data.user type: ${typeof data.user}`);
+      await storage.addLog(this.botId, `data.user type: ${typeof data.user}`);
       if (typeof data.user === "object") {
-        await storage.addLog(`data.user keys: ${JSON.stringify(Object.keys(data.user))}`);
+        await storage.addLog(this.botId, `data.user keys: ${JSON.stringify(Object.keys(data.user))}`);
       }
     }
 
@@ -199,12 +219,12 @@ export class HubsBot {
     token = findToken(data);
 
     if (!token) {
-      await storage.addLog(`FULL auth response: ${JSON.stringify(data).slice(0, 500)}`);
+      await storage.addLog(this.botId, `FULL auth response: ${JSON.stringify(data).slice(0, 500)}`);
       throw new Error("No string token found in auth response");
     }
 
     this.authToken = token;
-    await storage.addLog(`Token found (type=${typeof token}, length=${token.length}, prefix=${token.slice(0, 20)}...)`);
+    await storage.addLog(this.botId, `Token found (type=${typeof token}, length=${token.length}, prefix=${token.slice(0, 20)}...)`);
     await this.updateStatus("authenticating", "Authentication successful!");
     return token;
   }
@@ -244,12 +264,12 @@ export class HubsBot {
       this.page.on("console", (msg) => {
         const text = msg.text();
         if (text.length < 300 && !text.includes("color:")) {
-          storage.addLog(`[browser] ${text}`);
+          storage.addLog(this.botId, `[browser] ${text}`);
         }
       });
 
       this.page.on("pageerror", (err) => {
-        storage.addLog(`[browser error] ${err.message.slice(0, 200)}`);
+        storage.addLog(this.botId, `[browser error] ${err.message.slice(0, 200)}`);
       });
 
       await this.updateStatus("launching", "Browser launched successfully");
@@ -275,7 +295,7 @@ export class HubsBot {
 
       await this.updateStatus("logging_in", "Page DOM loaded, setting auth token before full load...");
 
-      const email = process.env.HUBS_BOT_EMAIL || "";
+      const email = this.credentials.email;
       await this.page.evaluate((token: string, botEmail: string) => {
         try {
           const existingStore = localStorage.getItem("___hubs_store");
@@ -331,10 +351,10 @@ export class HubsBot {
           };
         } catch { return { hasToken: false, tokenLength: 0, credKeys: [] }; }
       });
-      await storage.addLog(`Token check after reload: hasToken=${tokenCheck.hasToken}, length=${tokenCheck.tokenLength}, keys=${tokenCheck.credKeys.join(",")}`);
+      await storage.addLog(this.botId, `Token check after reload: hasToken=${tokenCheck.hasToken}, length=${tokenCheck.tokenLength}, keys=${tokenCheck.credKeys.join(",")}`);
 
       if (!tokenCheck.hasToken) {
-        await storage.addLog("Token was lost after reload, re-setting and reloading again...");
+        await storage.addLog(this.botId, "Token was lost after reload, re-setting and reloading again...");
         await this.page.evaluate((token: string, botEmail: string) => {
           localStorage.setItem("___hubs_store", JSON.stringify({
             credentials: { token, email: botEmail },
@@ -391,7 +411,7 @@ export class HubsBot {
         return { buttonTexts, hasCanvas, hasScene, inputCount, buttonCount: allButtons.length, allDivs, allSpans, bodyLength, iframes, shadowHosts };
       });
 
-      await storage.addLog(
+      await storage.addLog(this.botId,
         `Wait ${i + 1}/15: btns=${state.buttonCount}(${state.buttonTexts.slice(0, 5).join(", ")}) canvas=${state.hasCanvas} scene=${state.hasScene} divs=${state.allDivs} spans=${state.allSpans} bodyLen=${state.bodyLength} iframes=${state.iframes} shadowHosts=${state.shadowHosts}`
       );
 
@@ -399,19 +419,19 @@ export class HubsBot {
         const lower = t.toLowerCase();
         return lower.includes("join") || lower.includes("enter") || lower.includes("room");
       })) {
-        await storage.addLog("Found join/enter button! Proceeding...");
+        await storage.addLog(this.botId, "Found join/enter button! Proceeding...");
         await new Promise(resolve => setTimeout(resolve, 2000));
         return;
       }
 
       if (state.hasScene && i >= 5) {
-        await storage.addLog("Scene loaded, proceeding to check page state...");
+        await storage.addLog(this.botId, "Scene loaded, proceeding to check page state...");
         await new Promise(resolve => setTimeout(resolve, 3000));
         return;
       }
     }
 
-    await storage.addLog("Timed out waiting for lobby UI, proceeding anyway...");
+    await storage.addLog(this.botId, "Timed out waiting for lobby UI, proceeding anyway...");
   }
 
   private async dumpPageState(label: string): Promise<void> {
@@ -459,14 +479,14 @@ export class HubsBot {
       };
     });
 
-    await storage.addLog(`[${label}] URL: ${state.url}`);
-    await storage.addLog(`[${label}] Title: ${state.title}`);
-    await storage.addLog(`[${label}] Hubs store: ${state.storePreview}`);
-    await storage.addLog(`[${label}] Body text: ${state.bodyText.slice(0, 300)}`);
-    await storage.addLog(`[${label}] Root HTML: ${state.rootHtml.slice(0, 300)}`);
-    await storage.addLog(`[${label}] Found ${state.elements.length} interactive elements:`);
+    await storage.addLog(this.botId, `[${label}] URL: ${state.url}`);
+    await storage.addLog(this.botId, `[${label}] Title: ${state.title}`);
+    await storage.addLog(this.botId, `[${label}] Hubs store: ${state.storePreview}`);
+    await storage.addLog(this.botId, `[${label}] Body text: ${state.bodyText.slice(0, 300)}`);
+    await storage.addLog(this.botId, `[${label}] Root HTML: ${state.rootHtml.slice(0, 300)}`);
+    await storage.addLog(this.botId, `[${label}] Found ${state.elements.length} interactive elements:`);
     for (const el of state.elements) {
-      await storage.addLog(`[${label}]   ${el}`);
+      await storage.addLog(this.botId, `[${label}]   ${el}`);
     }
   }
 
@@ -489,7 +509,7 @@ export class HubsBot {
       if (found) return true;
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
-    await storage.addLog(`Waited ${maxWaitSecs}s but didn't find buttons: ${textPatterns.join(", ")}`);
+    await storage.addLog(this.botId, `Waited ${maxWaitSecs}s but didn't find buttons: ${textPatterns.join(", ")}`);
     return false;
   }
 
@@ -519,14 +539,14 @@ export class HubsBot {
     }, textPatterns);
 
     if (clicked) {
-      await storage.addLog(`Clicked button with text: "${clicked}"`);
+      await storage.addLog(this.botId, `Clicked button with text: "${clicked}"`);
     }
     return clicked;
   }
 
   private async reInjectToken(): Promise<void> {
     if (!this.page || !this.authToken) return;
-    const email = process.env.HUBS_BOT_EMAIL || "";
+    const email = this.credentials.email;
     await this.page.evaluate((token: string, botEmail: string) => {
       try {
         const existingStore = localStorage.getItem("___hubs_store");
@@ -545,10 +565,10 @@ export class HubsBot {
     if (!this.page) return false;
     const currentUrl = this.page.url();
     if (currentUrl.includes("/signin")) {
-      await storage.addLog("Detected redirect to /signin — re-injecting token and navigating back...");
+      await storage.addLog(this.botId, "Detected redirect to /signin — re-injecting token and navigating back...");
       await this.reInjectToken();
 
-      const email = process.env.HUBS_BOT_EMAIL || "";
+      const email = this.credentials.email;
       await this.page.evaluateOnNewDocument((token: string, botEmail: string) => {
         try {
           const existingStore = localStorage.getItem("___hubs_store");
@@ -575,7 +595,7 @@ export class HubsBot {
     if (!this.page) return;
 
     try {
-      await storage.addLog("=== Starting room entry sequence ===");
+      await storage.addLog(this.botId, "=== Starting room entry sequence ===");
 
       // Step 1: Click "Join Room" on the lobby page
       const clicked1 = await this.clickButtonByText([
@@ -597,7 +617,7 @@ export class HubsBot {
 
         await this.autoScreenshot("after-join");
       } else {
-        await storage.addLog("No Join Room button found, checking for other entry points...");
+        await storage.addLog(this.botId, "No Join Room button found, checking for other entry points...");
         const altClick = await this.clickButtonByText(["enter room", "enter"]);
         if (altClick) {
           await new Promise(resolve => setTimeout(resolve, 4000));
@@ -640,17 +660,17 @@ export class HubsBot {
       await new Promise(resolve => setTimeout(resolve, 3000));
       const skippedTour = await this.clickButtonByText(["skip tour", "skip", "close", "got it", "dismiss"]);
       if (skippedTour) {
-        await storage.addLog(`Dismissed tour dialog: "${skippedTour}"`);
+        await storage.addLog(this.botId, `Dismissed tour dialog: "${skippedTour}"`);
         await new Promise(resolve => setTimeout(resolve, 1000));
       }
 
       await this.updateStatus("connected", `Bot ready at: ${this.roomUrl}`, this.roomUrl);
       await this.dumpPageState("final-state");
-      await storage.addLog("=== Room entry sequence complete ===");
+      await storage.addLog(this.botId, "=== Room entry sequence complete ===");
 
       await this.startAutoNav();
     } catch (err: any) {
-      await storage.addLog(`Room entry error: ${err.message}`);
+      await storage.addLog(this.botId, `Room entry error: ${err.message}`);
     }
   }
 
@@ -668,7 +688,7 @@ export class HubsBot {
 
     await this.updateStatus("navigating", `Navigating to room: ${roomUrl}`, roomUrl);
 
-    const email = process.env.HUBS_BOT_EMAIL || "";
+    const email = this.credentials.email;
     if (this.authToken) {
       await this.page.evaluateOnNewDocument((token: string, botEmail: string) => {
         try {
@@ -719,7 +739,7 @@ export class HubsBot {
       throw new Error(`Unknown direction: ${direction}`);
     }
 
-    await storage.addLog(`Moving ${direction} for ${duration}ms`);
+    await storage.addLog(this.botId, `Moving ${direction} for ${duration}ms`);
     await this.page.keyboard.down(key);
     await new Promise(resolve => setTimeout(resolve, duration));
     await this.page.keyboard.up(key);
@@ -727,7 +747,7 @@ export class HubsBot {
 
   async jump(): Promise<void> {
     if (!this.page) throw new Error("Browser not launched");
-    await storage.addLog("Jumping!");
+    await storage.addLog(this.botId, "Jumping!");
     await this.page.keyboard.press("Space");
   }
 
@@ -742,7 +762,7 @@ export class HubsBot {
         canvas.dispatchEvent(new PointerEvent("pointerup", { button: 2 }));
       }
     }, deltaX, deltaY);
-    await storage.addLog(`Looked: deltaX=${deltaX}, deltaY=${deltaY}`);
+    await storage.addLog(this.botId, `Looked: deltaX=${deltaX}, deltaY=${deltaY}`);
   }
 
   private async stopMovement(): Promise<void> {
@@ -750,7 +770,7 @@ export class HubsBot {
     for (const key of ["w", "a", "s", "d"]) {
       await this.page.keyboard.up(key);
     }
-    await storage.addLog("Stopped all movement");
+    await storage.addLog(this.botId, "Stopped all movement");
   }
 
   async takeScreenshot(): Promise<string | null> {
@@ -777,7 +797,7 @@ export class HubsBot {
   async sendChat(message: string): Promise<void> {
     if (!this.page) throw new Error("Browser not launched");
 
-    await storage.addLog(`Sending chat: "${message}"`);
+    await storage.addLog(this.botId, `Sending chat: "${message}"`);
 
     const chatBtnClicked = await this.page.evaluate(() => {
       const btns = Array.from(document.querySelectorAll("button"));
@@ -824,7 +844,7 @@ export class HubsBot {
     });
 
     if (!inputSelector) {
-      await storage.addLog("Chat input not found, dumping page state...");
+      await storage.addLog(this.botId, "Chat input not found, dumping page state...");
       await this.dumpPageState("chat-input-search");
       return;
     }
@@ -838,7 +858,7 @@ export class HubsBot {
     }
 
     if (!inputHandle) {
-      await storage.addLog("Could not find chat input element");
+      await storage.addLog(this.botId, "Could not find chat input element");
       return;
     }
 
@@ -850,7 +870,7 @@ export class HubsBot {
     await new Promise(r => setTimeout(r, 150));
 
     await this.page.keyboard.press("Enter");
-    await storage.addLog(`Chat sent: "${message}"`);
+    await storage.addLog(this.botId, `Chat sent: "${message}"`);
   }
 
   private async readChatMessages(): Promise<{ author: string; text: string; key: string }[]> {
@@ -926,7 +946,7 @@ export class HubsBot {
     if (this.chatMonitorInterval) return;
 
     this.botDisplayName = await this.getBotDisplayName();
-    await storage.addLog(`Chat monitor started (bot name: "${this.botDisplayName}")`);
+    await storage.addLog(this.botId, `Chat monitor started (bot name: "${this.botDisplayName}")`);
 
     const initialMessages = await this.readChatMessages();
     for (const msg of initialMessages) {
@@ -989,12 +1009,21 @@ export class HubsBot {
         }
         if (msg.text.length < 2) continue;
 
+        const isFromOtherBot = this.otherBotNames.some(name => 
+          name && msg.author.toLowerCase().includes(name.toLowerCase())
+        );
+
         const timeSinceLastResponse = Date.now() - this.lastChatResponseTime;
-        if (timeSinceLastResponse < 3000) continue;
+        const minDelay = isFromOtherBot ? 8000 : 3000;
+        if (timeSinceLastResponse < minDelay) continue;
 
-        await storage.addLog(`Chat received from "${msg.author}": "${msg.text}"`);
+        if (isFromOtherBot && Math.random() < 0.4) continue;
 
-        const replyDelay = 1500 + Math.floor(Math.random() * 3000);
+        await storage.addLog(this.botId, `Chat received from "${msg.author}": "${msg.text}"`);
+
+        const replyDelay = isFromOtherBot 
+          ? 3000 + Math.floor(Math.random() * 5000)
+          : 1500 + Math.floor(Math.random() * 3000);
         await new Promise(resolve => setTimeout(resolve, replyDelay));
 
         const response = getConversationalResponse(msg.text);
@@ -1007,7 +1036,7 @@ export class HubsBot {
         this.seenChatMessages = new Set(entries.slice(-100));
       }
     } catch (err: any) {
-      await storage.addLog(`Chat monitor error: ${err.message}`);
+      await storage.addLog(this.botId, `Chat monitor error: ${err.message}`);
     }
 
     if (this.autoNavRunning) {
@@ -1019,7 +1048,7 @@ export class HubsBot {
     if (this.autoNavRunning) return;
     if (!this.page) throw new Error("Bot is not connected");
     this.autoNavRunning = true;
-    await storage.addLog("Auto-navigation started - bot will explore, chat, and respond to conversations");
+    await storage.addLog(this.botId, "Auto-navigation started - bot will explore, chat, and respond to conversations");
     this.runAutoNavLoop();
     this.startChatMonitor();
   }
@@ -1032,7 +1061,7 @@ export class HubsBot {
     }
     await this.stopChatMonitor();
     await this.stopMovement();
-    await storage.addLog("Auto-navigation stopped");
+    await storage.addLog(this.botId, "Auto-navigation stopped");
   }
 
   isAutoNavActive(): boolean {
@@ -1070,11 +1099,11 @@ export class HubsBot {
         const msg = AUTO_NAV_MESSAGES[Math.floor(Math.random() * AUTO_NAV_MESSAGES.length)];
         await this.sendChat(msg);
       } else {
-        await storage.addLog("Auto-nav: pausing briefly...");
+        await storage.addLog(this.botId, "Auto-nav: pausing briefly...");
         await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
       }
     } catch (err: any) {
-      await storage.addLog(`Auto-nav action error: ${err.message}`);
+      await storage.addLog(this.botId, `Auto-nav action error: ${err.message}`);
     }
 
     if (this.autoNavRunning) {
@@ -1120,4 +1149,60 @@ export class HubsBot {
   }
 }
 
-export const hubsBot = new HubsBot();
+export class BotManager {
+  private bots: Map<string, HubsBot> = new Map();
+
+  createBot(botId: string, credentials: BotCredentials): HubsBot {
+    if (this.bots.has(botId)) return this.bots.get(botId)!;
+    const bot = new HubsBot(botId, credentials);
+    this.bots.set(botId, bot);
+    return bot;
+  }
+
+  getBot(botId: string): HubsBot | undefined {
+    return this.bots.get(botId);
+  }
+
+  getAllBots(): Map<string, HubsBot> {
+    return this.bots;
+  }
+
+  async startAll(roomUrl?: string): Promise<void> {
+    const bots = Array.from(this.bots.values());
+    for (const bot of bots) {
+      if (!bot.isRunning()) {
+        await bot.start(roomUrl);
+        const name = bot.getDisplayName();
+        if (name) {
+          for (const other of bots) {
+            if (other.botId !== bot.botId) {
+              other.setOtherBotNames([...other['otherBotNames'].filter(n => n !== name), name]);
+            }
+          }
+        }
+        await new Promise(r => setTimeout(r, 5000));
+      }
+    }
+  }
+
+  updateBotNames(): void {
+    const bots = Array.from(this.bots.values());
+    for (const bot of bots) {
+      const otherNames = bots
+        .filter(b => b.botId !== bot.botId)
+        .map(b => b.getDisplayName())
+        .filter(n => n);
+      bot.setOtherBotNames(otherNames);
+    }
+  }
+
+  async stopAll(): Promise<void> {
+    for (const bot of this.bots.values()) {
+      if (bot.isRunning()) {
+        await bot.stop();
+      }
+    }
+  }
+}
+
+export const botManager = new BotManager();
