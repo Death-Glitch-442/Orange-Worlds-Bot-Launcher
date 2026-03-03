@@ -1153,7 +1153,7 @@ export class HubsBot {
         );
 
         const timeSinceLastResponse = Date.now() - this.lastChatResponseTime;
-        const minDelay = isFromOtherBot ? 3000 : 1500;
+        const minDelay = isFromOtherBot ? 10000 : 6000;
         if (timeSinceLastResponse < minDelay) continue;
 
         if (isFromOtherBot && Math.random() < 0.15) continue;
@@ -1161,8 +1161,8 @@ export class HubsBot {
         await storage.addLog(this.botId, `Chat received from "${msg.author}": "${msg.text}"`);
 
         const replyDelay = isFromOtherBot 
-          ? 1000 + Math.floor(Math.random() * 2000)
-          : 500 + Math.floor(Math.random() * 1500);
+          ? 4000 + Math.floor(Math.random() * 6000)
+          : 3000 + Math.floor(Math.random() * 4000);
         await new Promise(resolve => setTimeout(resolve, replyDelay));
 
         const response = await getAIResponse(msg.text, msg.author, this.conversationHistory, this.botDisplayName);
@@ -1184,7 +1184,7 @@ export class HubsBot {
     }
 
     if (this.autoNavRunning) {
-      this.chatMonitorInterval = setTimeout(() => this.runChatMonitorLoop(), 1500);
+      this.chatMonitorInterval = setTimeout(() => this.runChatMonitorLoop(), 4000);
     }
   }
 
@@ -1239,19 +1239,19 @@ export class HubsBot {
         await this.jump();
         await new Promise(resolve => setTimeout(resolve, 400));
         await this.move("forward", 800 + Math.floor(Math.random() * 1000));
-      } else if (action < 0.95) {
+      } else if (action < 0.86) {
         const msg = AUTO_NAV_MESSAGES[Math.floor(Math.random() * AUTO_NAV_MESSAGES.length)];
         await this.sendChat(msg);
       } else {
         await storage.addLog(this.botId, "Auto-nav: pausing briefly...");
-        await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 1000));
+        await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
       }
     } catch (err: any) {
       await storage.addLog(this.botId, `Auto-nav action error: ${err.message}`);
     }
 
     if (this.autoNavRunning) {
-      const delay = 800 + Math.floor(Math.random() * 1500);
+      const delay = 2000 + Math.floor(Math.random() * 3000);
       this.autoNavInterval = setTimeout(() => this.runAutoNavLoop(), delay);
     }
   }
