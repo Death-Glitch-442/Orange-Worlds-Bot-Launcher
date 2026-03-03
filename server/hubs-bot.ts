@@ -13,6 +13,7 @@ export class HubsBot {
   private authToken: string | null = null;
   private statusListeners: Set<(status: BotStatus) => void> = new Set();
   private starting: boolean = false;
+  private lastScreenshot: string | null = null;
 
   onStatusChange(listener: (status: BotStatus) => void) {
     this.statusListeners.add(listener);
@@ -32,6 +33,15 @@ export class HubsBot {
     for (const listener of this.statusListeners) {
       listener(botStatus);
     }
+  }
+
+  private async autoScreenshot(label: string): Promise<void> {
+    if (!this.page) return;
+    try {
+      const screenshot = await this.page.screenshot({ encoding: "base64", type: "jpeg", quality: 50 });
+      this.lastScreenshot = `data:image/jpeg;base64,${screenshot}`;
+      await storage.addLog(`[screenshot taken: ${label}]`);
+    } catch {}
   }
 
   async authenticate(): Promise<string> {
@@ -60,13 +70,26 @@ export class HubsBot {
     }
 
     const data = await response.json() as any;
-    const token = data.token || data.access_token || data.accessToken || data.data?.token || data.data?.access_token;
+    await storage.addLog(`Auth response structure: ${JSON.stringify(Object.keys(data))}`);
+    
+    let token: string | undefined;
+    if (data.token) token = data.token;
+    else if (data.access_token) token = data.access_token;
+    else if (data.accessToken) token = data.accessToken;
+    else if (data.data?.token) token = data.data.token;
+    else if (data.data?.access_token) token = data.data.access_token;
+    else if (data.data?.accessToken) token = data.data.accessToken;
+    else if (data.result?.token) token = data.result.token;
+    else if (data.user?.token) token = data.user.token;
+
     if (!token) {
-      throw new Error("No token found in auth response. Response keys: " + Object.keys(data).join(", "));
+      const safePreview = JSON.stringify(data).slice(0, 300);
+      await storage.addLog(`Auth response preview (looking for token): ${safePreview}`);
+      throw new Error("No token found in auth response. Keys: " + Object.keys(data).join(", "));
     }
 
     this.authToken = token;
-    await this.updateStatus("authenticating", "Authentication successful!");
+    await this.updateStatus("authenticating", `Authentication successful! Token length: ${token.length}`);
     return token;
   }
 
@@ -104,7 +127,7 @@ export class HubsBot {
 
       this.page.on("console", (msg) => {
         const text = msg.text();
-        if (text.length < 200) {
+        if (text.length < 300 && !text.includes("color:")) {
           storage.addLog(`[browser] ${text}`);
         }
       });
@@ -134,10 +157,7 @@ export class HubsBot {
         timeout: 120000,
       });
 
-      await this.updateStatus("logging_in", "Page loaded, waiting for app to initialize...");
-      await this.waitForHubsReady();
-
-      await this.updateStatus("logging_in", "Setting auth token...");
+      await this.updateStatus("logging_in", "Page DOM loaded, setting auth token before full load...");
 
       const email = process.env.HUBS_BOT_EMAIL || "";
       await this.page.evaluate((token: string, botEmail: string) => {
@@ -151,72 +171,117 @@ export class HubsBot {
             credentials: { token, email: botEmail },
           }));
         }
-        try {
-          (window as any).__store?.update({ credentials: { token, email: botEmail } });
-        } catch (e) {}
       }, this.authToken, email);
 
-      await this.updateStatus("logging_in", "Auth token set, reloading page...");
-
+      await this.updateStatus("logging_in", "Auth token set in localStorage, reloading...");
       await this.page.reload({ waitUntil: "domcontentloaded", timeout: 120000 });
-      await this.waitForHubsReady();
+
+      await this.updateStatus("logging_in", "Waiting for Hubs UI to fully load...");
+      await this.waitForLobbyUI();
+
+      await this.autoScreenshot("after-login");
 
       const pageTitle = await this.page.title();
       const currentUrl = this.page.url();
-      await this.updateStatus("connected", `Connected! Page: "${pageTitle}" URL: ${currentUrl}`, currentUrl);
+      await this.updateStatus("logging_in", `Page loaded: "${pageTitle}" at ${currentUrl}`, currentUrl);
 
+      await this.dumpPageState("post-login");
       await this.tryEnterRoom();
+
+      await this.autoScreenshot("after-enter-attempt");
+
+      const finalUrl = this.page.url();
+      await this.updateStatus("connected", `Bot ready at: ${finalUrl}`, finalUrl);
     } catch (err: any) {
+      await this.autoScreenshot("error-state");
       await this.updateStatus("error", `Login failed: ${err.message}`);
       throw err;
     }
   }
 
-  private async waitForHubsReady(): Promise<void> {
+  private async waitForLobbyUI(): Promise<void> {
     if (!this.page) return;
 
-    await storage.addLog("Waiting for Hubs app to initialize...");
-
-    for (let i = 0; i < 30; i++) {
+    for (let i = 0; i < 20; i++) {
       await new Promise(resolve => setTimeout(resolve, 2000));
 
-      const ready = await this.page.evaluate(() => {
+      const state = await this.page.evaluate(() => {
+        const allButtons = Array.from(document.querySelectorAll("button"));
+        const buttonTexts = allButtons.map(b => (b.textContent || "").trim()).filter(t => t.length > 0);
         const hasCanvas = !!document.querySelector("canvas");
-        const hasAframe = !!(document as any).querySelector("a-scene");
-        const hasUI = !!document.querySelector("button");
-        return { hasCanvas, hasAframe, hasUI };
+        const hasScene = !!document.querySelector("a-scene");
+        const allLinks = Array.from(document.querySelectorAll("a"));
+        const linkTexts = allLinks.map(a => `${(a.textContent || "").trim()}[${a.href}]`).filter(t => t.length > 2).slice(0, 10);
+        const inputCount = document.querySelectorAll("input").length;
+        return { buttonTexts, hasCanvas, hasScene, linkTexts, inputCount, buttonCount: allButtons.length };
       });
 
-      await storage.addLog(`Check ${i + 1}/30: canvas=${ready.hasCanvas} aframe=${ready.hasAframe} ui=${ready.hasUI}`);
+      await storage.addLog(
+        `Wait ${i + 1}/20: buttons=${state.buttonCount}(${state.buttonTexts.slice(0, 5).join(", ")}) canvas=${state.hasCanvas} scene=${state.hasScene} inputs=${state.inputCount}`
+      );
 
-      if (ready.hasCanvas || ready.hasAframe) {
-        await storage.addLog("Hubs app detected! Waiting a few more seconds for full load...");
-        await new Promise(resolve => setTimeout(resolve, 5000));
+      if (state.buttonTexts.some(t => {
+        const lower = t.toLowerCase();
+        return lower.includes("join") || lower.includes("enter") || lower.includes("room");
+      })) {
+        await storage.addLog("Found join/enter button! Proceeding...");
+        await new Promise(resolve => setTimeout(resolve, 2000));
         return;
       }
 
-      if (ready.hasUI && i >= 3) {
-        await storage.addLog("UI buttons detected, proceeding...");
-        await new Promise(resolve => setTimeout(resolve, 3000));
+      if (state.hasCanvas && state.buttonCount > 0 && i >= 5) {
+        await storage.addLog("Canvas + buttons found, proceeding...");
+        await new Promise(resolve => setTimeout(resolve, 2000));
         return;
       }
     }
 
-    await storage.addLog("Timed out waiting for Hubs, proceeding anyway...");
+    await storage.addLog("Timed out waiting for lobby UI, proceeding anyway...");
   }
 
-  private async clickButtonByText(textPatterns: string[]): Promise<boolean> {
-    if (!this.page) return false;
+  private async dumpPageState(label: string): Promise<void> {
+    if (!this.page) return;
+
+    const state = await this.page.evaluate(() => {
+      const allElements = document.querySelectorAll("button, a, input, [role='button']");
+      const items: string[] = [];
+      allElements.forEach((el) => {
+        const tag = el.tagName.toLowerCase();
+        const text = (el.textContent || "").trim().slice(0, 40);
+        const classes = (el.className || "").toString().slice(0, 60);
+        const id = el.id || "";
+        const href = (el as HTMLAnchorElement).href || "";
+        const type = (el as HTMLInputElement).type || "";
+        items.push(`<${tag} id="${id}" class="${classes}" type="${type}" href="${href}">${text}</${tag}>`);
+      });
+      return {
+        url: window.location.href,
+        title: document.title,
+        bodyText: document.body?.innerText?.slice(0, 500) || "",
+        elements: items.slice(0, 30),
+      };
+    });
+
+    await storage.addLog(`[${label}] URL: ${state.url}`);
+    await storage.addLog(`[${label}] Title: ${state.title}`);
+    await storage.addLog(`[${label}] Body text: ${state.bodyText.slice(0, 200)}`);
+    for (const el of state.elements) {
+      await storage.addLog(`[${label}] ${el}`);
+    }
+  }
+
+  private async clickButtonByText(textPatterns: string[]): Promise<string | null> {
+    if (!this.page) return null;
 
     const clicked = await this.page.evaluate((patterns: string[]) => {
-      const buttons = Array.from(document.querySelectorAll("button, a[role='button'], a[href]"));
+      const elements = Array.from(document.querySelectorAll("button, a[role='button'], [role='button'], a"));
       for (const pattern of patterns) {
         const lowerPattern = pattern.toLowerCase();
-        for (const btn of buttons) {
-          const text = (btn.textContent || "").trim().toLowerCase();
-          if (text.includes(lowerPattern) || text === lowerPattern) {
-            (btn as HTMLElement).click();
-            return text;
+        for (const el of elements) {
+          const text = (el.textContent || "").trim().toLowerCase();
+          if (text === lowerPattern || text.includes(lowerPattern)) {
+            (el as HTMLElement).click();
+            return (el.textContent || "").trim();
           }
         }
       }
@@ -224,68 +289,54 @@ export class HubsBot {
     }, textPatterns);
 
     if (clicked) {
-      await storage.addLog(`Clicked button: "${clicked}"`);
-      return true;
+      await storage.addLog(`Clicked button with text: "${clicked}"`);
     }
-    return false;
+    return clicked;
   }
 
   private async tryEnterRoom(): Promise<void> {
     if (!this.page) return;
 
     try {
-      await new Promise(resolve => setTimeout(resolve, 3000));
+      await storage.addLog("=== Starting room entry sequence ===");
 
-      const buttonTexts = await this.page.evaluate(() => {
-        const buttons = Array.from(document.querySelectorAll("button, a[role='button']"));
-        return buttons.map(b => (b.textContent || "").trim()).filter(t => t.length > 0 && t.length < 50);
-      });
-      await storage.addLog(`Found buttons: ${buttonTexts.join(" | ")}`);
-
-      const enterClicked = await this.clickButtonByText([
-        "enter room", "enter", "join room", "join", "enter world", "go in"
+      const clicked1 = await this.clickButtonByText([
+        "join room", "join", "enter room", "enter", "enter world", "connect"
       ]);
 
-      if (enterClicked) {
-        await this.updateStatus("connected", "Clicked enter/join button!");
+      if (clicked1) {
+        await this.updateStatus("logging_in", `Clicked "${clicked1}", waiting for next step...`);
         await new Promise(resolve => setTimeout(resolve, 5000));
+        await this.autoScreenshot("after-join-click");
+        await this.dumpPageState("after-join-click");
 
-        const postClickButtons = await this.page.evaluate(() => {
-          const buttons = Array.from(document.querySelectorAll("button, a[role='button']"));
-          return buttons.map(b => (b.textContent || "").trim()).filter(t => t.length > 0 && t.length < 50);
-        });
-        await storage.addLog(`Post-click buttons: ${postClickButtons.join(" | ")}`);
-
-        const secondClick = await this.clickButtonByText([
-          "accept", "agree", "continue", "connect", "enter", "ok", "got it", "close"
+        const clicked2 = await this.clickButtonByText([
+          "enter on screen", "enter room", "enter", "accept", "agree", "continue",
+          "ok", "got it", "close", "connect", "spawn"
         ]);
-        if (secondClick) {
-          await storage.addLog("Clicked secondary dialog button");
-          await new Promise(resolve => setTimeout(resolve, 3000));
-        }
 
-        const thirdClick = await this.clickButtonByText([
-          "enter room", "enter", "join", "connect"
-        ]);
-        if (thirdClick) {
-          await storage.addLog("Clicked tertiary entry button");
+        if (clicked2) {
+          await storage.addLog(`Clicked secondary: "${clicked2}"`);
           await new Promise(resolve => setTimeout(resolve, 5000));
+          await this.autoScreenshot("after-secondary-click");
+          await this.dumpPageState("after-secondary-click");
+
+          const clicked3 = await this.clickButtonByText([
+            "enter room", "enter", "join", "connect", "spawn", "continue"
+          ]);
+          if (clicked3) {
+            await storage.addLog(`Clicked tertiary: "${clicked3}"`);
+            await new Promise(resolve => setTimeout(resolve, 5000));
+          }
         }
+      } else {
+        await storage.addLog("No join/enter button found to click");
+        await this.dumpPageState("no-button-found");
       }
 
-      const finalButtons = await this.page.evaluate(() => {
-        const buttons = Array.from(document.querySelectorAll("button, a[role='button']"));
-        return buttons.map(b => (b.textContent || "").trim()).filter(t => t.length > 0 && t.length < 50);
-      });
-      if (finalButtons.length > 0) {
-        await storage.addLog(`Final page buttons: ${finalButtons.join(" | ")}`);
-      }
-
-      const hasCanvas = await this.page.evaluate(() => !!document.querySelector("canvas"));
-      await storage.addLog(`Canvas present: ${hasCanvas}`);
-
+      await storage.addLog("=== Room entry sequence complete ===");
     } catch (err: any) {
-      await storage.addLog(`Room entry attempt: ${err.message}`);
+      await storage.addLog(`Room entry error: ${err.message}`);
     }
   }
 
@@ -294,9 +345,41 @@ export class HubsBot {
       throw new Error("Browser not launched");
     }
 
-    await this.updateStatus("navigating", `Entering room: ${roomUrl}`, roomUrl);
+    if (this.page.url() === roomUrl) {
+      await this.updateStatus("navigating", "Already on this page, attempting to enter room...", roomUrl);
+      await this.tryEnterRoom();
+      await this.updateStatus("connected", `In room: ${roomUrl}`, roomUrl);
+      return;
+    }
+
+    await this.updateStatus("navigating", `Navigating to room: ${roomUrl}`, roomUrl);
+
+    const email = process.env.HUBS_BOT_EMAIL || "";
+    if (this.authToken) {
+      await this.page.evaluateOnNewDocument((token: string, botEmail: string) => {
+        try {
+          localStorage.setItem("___hubs_store", JSON.stringify({
+            credentials: { token, email: botEmail },
+          }));
+        } catch {}
+      }, this.authToken, email);
+    }
+
     await this.page.goto(roomUrl, { waitUntil: "domcontentloaded", timeout: 120000 });
-    await this.waitForHubsReady();
+
+    if (this.authToken) {
+      await this.page.evaluate((token: string, botEmail: string) => {
+        try {
+          const existingStore = localStorage.getItem("___hubs_store");
+          const store = existingStore ? JSON.parse(existingStore) : {};
+          store.credentials = { token, email: botEmail };
+          localStorage.setItem("___hubs_store", JSON.stringify(store));
+        } catch {}
+      }, this.authToken, email);
+    }
+
+    await this.waitForLobbyUI();
+    await this.autoScreenshot("enter-room-loaded");
     await this.tryEnterRoom();
     await this.updateStatus("connected", `In room: ${roomUrl}`, roomUrl);
   }
@@ -357,12 +440,15 @@ export class HubsBot {
   }
 
   async takeScreenshot(): Promise<string | null> {
-    if (!this.page) return null;
+    if (!this.page) {
+      return this.lastScreenshot;
+    }
     try {
       const screenshot = await this.page.screenshot({ encoding: "base64", type: "jpeg", quality: 60 });
-      return `data:image/jpeg;base64,${screenshot}`;
+      this.lastScreenshot = `data:image/jpeg;base64,${screenshot}`;
+      return this.lastScreenshot;
     } catch {
-      return null;
+      return this.lastScreenshot;
     }
   }
 
