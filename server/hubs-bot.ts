@@ -799,78 +799,70 @@ export class HubsBot {
 
     await storage.addLog(this.botId, `Sending chat: "${message}"`);
 
-    const chatBtnClicked = await this.page.evaluate(() => {
-      const btns = Array.from(document.querySelectorAll("button"));
-      const chatBtn = btns.find(b => (b.textContent || "").trim().toLowerCase() === "chat");
-      if (chatBtn) {
-        chatBtn.click();
-        return true;
-      }
-      return false;
-    });
-
-    if (chatBtnClicked) {
-      await new Promise(r => setTimeout(r, 800));
-    }
-
-    const inputSelector = await this.page.evaluate(() => {
-      const selectors = [
-        'input[placeholder*="Send"]',
-        'input[placeholder*="send"]',
-        'input[placeholder*="message"]',
-        'input[placeholder*="Message"]',
-        'input[placeholder*="chat"]',
-        'input[placeholder*="Chat"]',
-        'textarea[placeholder*="Send"]',
-        'textarea[placeholder*="message"]',
-      ];
-      for (const sel of selectors) {
-        const el = document.querySelector(sel);
-        if (el) return sel;
-      }
-      const allInputs = Array.from(document.querySelectorAll("input[type='text']"));
-      const chatInput = allInputs.find(i => {
-        const p = ((i as HTMLInputElement).placeholder || "").toLowerCase();
-        return p.includes("message") || p.includes("send") || p.includes("chat") || p.includes("type");
+    for (let attempt = 0; attempt < 3; attempt++) {
+      const hasChatSidebar = await this.page.evaluate(() => {
+        return !!document.querySelector('[class*="ChatSidebar"], [class*="chat-sidebar"]');
       });
-      if (chatInput) {
-        const idx = allInputs.indexOf(chatInput);
-        return `input[type='text']:nth-of-type(${idx + 1})`;
+
+      if (!hasChatSidebar) {
+        await this.page.evaluate(() => {
+          const btns = Array.from(document.querySelectorAll("button"));
+          const chatBtn = btns.find(b => (b.textContent || "").trim().toLowerCase() === "chat");
+          if (chatBtn) chatBtn.click();
+        });
+        await new Promise(r => setTimeout(r, 1200));
       }
-      if (allInputs.length > 0) {
-        return "__last_input__";
+
+      const inputHandle = await this.findChatInput();
+      if (inputHandle) {
+        await inputHandle.click();
+        await new Promise(r => setTimeout(r, 150));
+        await inputHandle.evaluate((el: any) => { el.value = ""; });
+        await inputHandle.type(message, { delay: 10 });
+        await new Promise(r => setTimeout(r, 100));
+        await this.page.keyboard.press("Enter");
+        await storage.addLog(this.botId, `Chat sent: "${message}"`);
+        return;
       }
-      return null;
-    });
 
-    if (!inputSelector) {
-      await storage.addLog(this.botId, "Chat input not found, dumping page state...");
-      await this.dumpPageState("chat-input-search");
-      return;
+      await storage.addLog(this.botId, `Chat input not found (attempt ${attempt + 1}/3), retrying...`);
+      await this.page.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll("button"));
+        const chatBtn = btns.find(b => (b.textContent || "").trim().toLowerCase() === "chat");
+        if (chatBtn) chatBtn.click();
+      });
+      await new Promise(r => setTimeout(r, 500));
+      await this.page.evaluate(() => {
+        const btns = Array.from(document.querySelectorAll("button"));
+        const chatBtn = btns.find(b => (b.textContent || "").trim().toLowerCase() === "chat");
+        if (chatBtn) chatBtn.click();
+      });
+      await new Promise(r => setTimeout(r, 1200));
     }
 
-    let inputHandle;
-    if (inputSelector === "__last_input__") {
-      const inputs = await this.page.$$("input[type='text']");
-      inputHandle = inputs[inputs.length - 1];
-    } else {
-      inputHandle = await this.page.$(inputSelector);
+    await storage.addLog(this.botId, "Chat input not found after 3 attempts");
+    await this.dumpPageState("chat-input-search");
+  }
+
+  private async findChatInput(): Promise<any> {
+    if (!this.page) return null;
+    const selectors = [
+      'input[placeholder*="Send"]',
+      'input[placeholder*="send"]',
+      'input[placeholder*="message"]',
+      'input[placeholder*="Message"]',
+      'input[placeholder*="chat"]',
+      'input[placeholder*="Chat"]',
+      'textarea[placeholder*="Send"]',
+      'textarea[placeholder*="message"]',
+    ];
+    for (const sel of selectors) {
+      const el = await this.page.$(sel);
+      if (el) return el;
     }
-
-    if (!inputHandle) {
-      await storage.addLog(this.botId, "Could not find chat input element");
-      return;
-    }
-
-    await inputHandle.click();
-    await new Promise(r => setTimeout(r, 200));
-
-    await inputHandle.evaluate((el: any) => { el.value = ""; });
-    await inputHandle.type(message, { delay: 10 });
-    await new Promise(r => setTimeout(r, 150));
-
-    await this.page.keyboard.press("Enter");
-    await storage.addLog(this.botId, `Chat sent: "${message}"`);
+    const allInputs = await this.page.$$("input[type='text']");
+    if (allInputs.length > 0) return allInputs[allInputs.length - 1];
+    return null;
   }
 
   private async readChatMessages(): Promise<{ author: string; text: string; key: string }[]> {
@@ -988,7 +980,19 @@ export class HubsBot {
           const chatBtn = btns.find(b => (b.textContent || "").trim().toLowerCase() === "chat");
           if (chatBtn) chatBtn.click();
         });
-        await new Promise(r => setTimeout(r, 600));
+        await new Promise(r => setTimeout(r, 1200));
+
+        const nowOpen = await this.page.evaluate(() => {
+          return !!document.querySelector('[class*="ChatSidebar"], [class*="chat-sidebar"]');
+        });
+        if (!nowOpen) {
+          await this.page.evaluate(() => {
+            const btns = Array.from(document.querySelectorAll("button"));
+            const chatBtn = btns.find(b => (b.textContent || "").trim().toLowerCase() === "chat");
+            if (chatBtn) chatBtn.click();
+          });
+          await new Promise(r => setTimeout(r, 1200));
+        }
       }
     } catch {}
   }
