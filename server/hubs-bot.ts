@@ -1168,21 +1168,20 @@ export class BotManager {
   }
 
   async startAll(roomUrl?: string): Promise<void> {
-    const bots = Array.from(this.bots.values());
-    for (const bot of bots) {
-      if (!bot.isRunning()) {
-        await bot.start(roomUrl);
-        const name = bot.getDisplayName();
-        if (name) {
-          for (const other of bots) {
-            if (other.botId !== bot.botId) {
-              other.setOtherBotNames([...other['otherBotNames'].filter(n => n !== name), name]);
-            }
-          }
+    const bots = Array.from(this.bots.values()).filter(b => !b.isRunning());
+    const startPromises = bots.map((bot, index) => {
+      return new Promise<void>(async (resolve) => {
+        await new Promise(r => setTimeout(r, index * 3000));
+        try {
+          await bot.start(roomUrl);
+        } catch (err) {
+          console.error(`Failed to start ${bot.botId}:`, err);
         }
-        await new Promise(r => setTimeout(r, 5000));
-      }
-    }
+        resolve();
+      });
+    });
+    await Promise.all(startPromises);
+    this.updateBotNames();
   }
 
   updateBotNames(): void {
