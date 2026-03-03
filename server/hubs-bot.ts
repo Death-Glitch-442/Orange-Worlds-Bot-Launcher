@@ -1261,6 +1261,26 @@ export class HubsBot {
     await this.stopChatMonitor().catch(() => {});
     await this.stopMovement().catch(() => {});
     this.seenChatMessages.clear();
+    this.conversationHistory = [];
+    if (this.page) {
+      try {
+        await this.page.evaluate(() => {
+          const btns = Array.from(document.querySelectorAll("button"));
+          const leaveBtn = btns.find(b => (b.textContent || "").trim().toLowerCase() === "leave");
+          if (leaveBtn) leaveBtn.click();
+        });
+        await new Promise(r => setTimeout(r, 1000));
+        await this.page.evaluate(() => {
+          const btns = Array.from(document.querySelectorAll("button"));
+          const confirmBtn = btns.find(b => {
+            const t = (b.textContent || "").trim().toLowerCase();
+            return t === "leave room" || t === "leave" || t === "yes" || t === "confirm";
+          });
+          if (confirmBtn) confirmBtn.click();
+        });
+        await new Promise(r => setTimeout(r, 1000));
+      } catch {}
+    }
     if (this.browser) {
       await this.browser.close().catch(() => {});
       this.browser = null;
