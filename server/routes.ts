@@ -63,6 +63,25 @@ export async function registerRoutes(
     res.json(result);
   });
 
+  app.post("/api/bots/start-all", async (req, res) => {
+    try {
+      const roomUrl = req.body?.roomUrl;
+      res.json({ message: "Starting all bots..." });
+      botManager.startAll(roomUrl).catch(() => {});
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  app.post("/api/bots/stop-all", async (_req, res) => {
+    try {
+      await botManager.stopAll();
+      res.json({ message: "All bots stopped" });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   app.get("/api/bots/:botId/status", async (req, res) => {
     const status = await storage.getBotStatus(req.params.botId);
     res.json(status);
@@ -190,25 +209,6 @@ export async function registerRoutes(
       if (!bot) return res.status(404).json({ error: "Bot not found" });
       const info = await bot.getPageInfo();
       res.json(info || { title: "", url: "" });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post("/api/bots/start-all", async (req, res) => {
-    try {
-      const roomUrl = req.body?.roomUrl;
-      res.json({ message: "Starting all bots..." });
-      botManager.startAll(roomUrl).catch(() => {});
-    } catch (err: any) {
-      res.status(500).json({ error: err.message });
-    }
-  });
-
-  app.post("/api/bots/stop-all", async (_req, res) => {
-    try {
-      await botManager.stopAll();
-      res.json({ message: "All bots stopped" });
     } catch (err: any) {
       res.status(500).json({ error: err.message });
     }
