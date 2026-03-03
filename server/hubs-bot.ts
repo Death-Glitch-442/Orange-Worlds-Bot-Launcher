@@ -779,53 +779,78 @@ export class HubsBot {
 
     await storage.addLog(`Sending chat: "${message}"`);
 
-    await this.page.evaluate(async (msg: string) => {
-      const chatBtn = Array.from(document.querySelectorAll("button")).find(
-        (b) => (b.textContent || "").trim().toLowerCase() === "chat"
-      );
-      if (chatBtn) chatBtn.click();
-      await new Promise((r) => setTimeout(r, 500));
-
-      const chatInput = document.querySelector(
-        'input[type="text"][placeholder*="Send"], input[type="text"][placeholder*="message"], textarea, .chat-input input, input.TextInput__text-input__HqvuV'
-      ) as HTMLInputElement | null;
-
-      const allInputs = Array.from(document.querySelectorAll("input[type='text'], textarea")) as HTMLInputElement[];
-      const input = chatInput || allInputs.find((i) => {
-        const placeholder = (i.placeholder || "").toLowerCase();
-        return placeholder.includes("message") || placeholder.includes("send") || placeholder.includes("chat");
-      }) || allInputs[allInputs.length - 1];
-
-      if (input) {
-        input.focus();
-        input.value = msg;
-        input.dispatchEvent(new Event("input", { bubbles: true }));
-        input.dispatchEvent(new Event("change", { bubbles: true }));
-        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
-          window.HTMLInputElement.prototype, "value"
-        )?.set;
-        if (nativeInputValueSetter) {
-          nativeInputValueSetter.call(input, msg);
-          input.dispatchEvent(new Event("input", { bubbles: true }));
-        }
-
-        await new Promise((r) => setTimeout(r, 200));
-        input.dispatchEvent(
-          new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true })
-        );
-        input.dispatchEvent(
-          new KeyboardEvent("keypress", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true })
-        );
-        input.dispatchEvent(
-          new KeyboardEvent("keyup", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true })
-        );
-
-        const form = input.closest("form");
-        if (form) {
-          form.dispatchEvent(new Event("submit", { bubbles: true }));
-        }
+    const chatBtnClicked = await this.page.evaluate(() => {
+      const btns = Array.from(document.querySelectorAll("button"));
+      const chatBtn = btns.find(b => (b.textContent || "").trim().toLowerCase() === "chat");
+      if (chatBtn) {
+        chatBtn.click();
+        return true;
       }
-    }, message);
+      return false;
+    });
+
+    if (chatBtnClicked) {
+      await new Promise(r => setTimeout(r, 800));
+    }
+
+    const inputSelector = await this.page.evaluate(() => {
+      const selectors = [
+        'input[placeholder*="Send"]',
+        'input[placeholder*="send"]',
+        'input[placeholder*="message"]',
+        'input[placeholder*="Message"]',
+        'input[placeholder*="chat"]',
+        'input[placeholder*="Chat"]',
+        'textarea[placeholder*="Send"]',
+        'textarea[placeholder*="message"]',
+      ];
+      for (const sel of selectors) {
+        const el = document.querySelector(sel);
+        if (el) return sel;
+      }
+      const allInputs = Array.from(document.querySelectorAll("input[type='text']"));
+      const chatInput = allInputs.find(i => {
+        const p = ((i as HTMLInputElement).placeholder || "").toLowerCase();
+        return p.includes("message") || p.includes("send") || p.includes("chat") || p.includes("type");
+      });
+      if (chatInput) {
+        const idx = allInputs.indexOf(chatInput);
+        return `input[type='text']:nth-of-type(${idx + 1})`;
+      }
+      if (allInputs.length > 0) {
+        return "__last_input__";
+      }
+      return null;
+    });
+
+    if (!inputSelector) {
+      await storage.addLog("Chat input not found, dumping page state...");
+      await this.dumpPageState("chat-input-search");
+      return;
+    }
+
+    let inputHandle;
+    if (inputSelector === "__last_input__") {
+      const inputs = await this.page.$$("input[type='text']");
+      inputHandle = inputs[inputs.length - 1];
+    } else {
+      inputHandle = await this.page.$(inputSelector);
+    }
+
+    if (!inputHandle) {
+      await storage.addLog("Could not find chat input element");
+      return;
+    }
+
+    await inputHandle.click();
+    await new Promise(r => setTimeout(r, 200));
+
+    await inputHandle.evaluate((el: any) => { el.value = ""; });
+    await inputHandle.type(message, { delay: 10 });
+    await new Promise(r => setTimeout(r, 150));
+
+    await this.page.keyboard.press("Enter");
+    await storage.addLog(`Chat sent: "${message}"`);
   }
 
   private async readChatMessages(): Promise<{ author: string; text: string; key: string }[]> {
@@ -833,60 +858,60 @@ export class HubsBot {
     try {
       const messages = await this.page.evaluate(() => {
         const results: { author: string; text: string; key: string }[] = [];
-        const chatMessages = document.querySelectorAll(
-          '[class*="chat-message"], [class*="ChatMessage"], [class*="message-group"], [class*="MessageGroup"]'
-        );
-        chatMessages.forEach((el) => {
-          const text = (el.textContent || "").trim();
-          if (text) {
-            const parts = text.split(/:\s+/);
-            if (parts.length >= 2) {
-              results.push({
-                author: parts[0].trim(),
-                text: parts.slice(1).join(": ").trim(),
-                key: text.slice(0, 100),
-              });
-            }
-          }
-        });
 
-        if (results.length === 0) {
-          const logEntries = document.querySelectorAll(
-            '[class*="presence-log"] li, [class*="MessageBubble"], [class*="chat"] [class*="entry"], [class*="Chat"] li, [class*="chat-log"] > div'
-          );
-          logEntries.forEach((el) => {
-            const text = (el.textContent || "").trim();
-            if (text && text.length > 2 && text.length < 500) {
-              const parts = text.split(/:\s+/);
-              if (parts.length >= 2) {
-                results.push({
-                  author: parts[0].trim(),
-                  text: parts.slice(1).join(": ").trim(),
-                  key: text.slice(0, 100),
-                });
+        const presenceLog = document.querySelector('[class*="presence-log"]');
+        if (presenceLog) {
+          const buttons = presenceLog.querySelectorAll('button[class*="spawn-message"]');
+          buttons.forEach((btn) => {
+            const wrapper = btn.closest('div, li, span') || btn.parentElement;
+            if (!wrapper) return;
+            const text = (wrapper.textContent || "").trim();
+            if (text && text.includes(":")) {
+              const colonIdx = text.indexOf(":");
+              const author = text.slice(0, colonIdx).trim();
+              const msg = text.slice(colonIdx + 1).trim();
+              if (author && msg && msg.length > 0) {
+                results.push({ author, text: msg, key: `${author}:${msg}` });
               }
             }
           });
-        }
 
-        if (results.length === 0) {
-          const chatSidebar = document.querySelector('[class*="ChatSidebar"], [class*="chat-sidebar"], [class*="ChatPanel"]');
-          if (chatSidebar) {
-            const entries = chatSidebar.querySelectorAll("li, [class*='message'], [class*='Message'], div > p");
-            entries.forEach((el) => {
-              const text = (el.textContent || "").trim();
-              if (text && text.length > 2 && text.length < 500) {
-                const parts = text.split(/:\s+/);
-                if (parts.length >= 2) {
-                  results.push({
-                    author: parts[0].trim(),
-                    text: parts.slice(1).join(": ").trim(),
-                    key: text.slice(0, 100),
-                  });
+          if (results.length === 0) {
+            const fullText = (presenceLog.textContent || "").trim();
+            if (fullText.includes(":")) {
+              const pattern = /([^:]+):([^:]*?)(?=\S+:|$)/g;
+              const segments = fullText.split(/(?=[A-Z][a-z]+-[A-Z][a-z]+-\d+:)/);
+              for (const segment of segments) {
+                const colonIdx = segment.indexOf(":");
+                if (colonIdx > 0) {
+                  const author = segment.slice(0, colonIdx).trim();
+                  const msg = segment.slice(colonIdx + 1).trim();
+                  if (author && msg && msg.length > 0 && author.length < 50) {
+                    results.push({ author, text: msg, key: `${author}:${msg}` });
+                  }
                 }
               }
-            });
+            }
           }
+        }
+
+        const chatSidebar = document.querySelector('[class*="ChatSidebar"], [class*="chat-sidebar"]');
+        if (chatSidebar) {
+          const entries = chatSidebar.querySelectorAll('[class*="message-group"], [class*="MessageGroup"], li, [class*="message-bubble"], [class*="MessageBubble"]');
+          entries.forEach((el) => {
+            const text = (el.textContent || "").trim();
+            if (text && text.includes(":") && text.length > 2 && text.length < 500) {
+              const colonIdx = text.indexOf(":");
+              const author = text.slice(0, colonIdx).trim();
+              const msg = text.slice(colonIdx + 1).trim();
+              if (author && msg && author.length < 50) {
+                const key = `${author}:${msg}`;
+                if (!results.some(r => r.key === key)) {
+                  results.push({ author, text: msg, key });
+                }
+              }
+            }
+          });
         }
 
         return results;
@@ -931,10 +956,28 @@ export class HubsBot {
     } catch { return ""; }
   }
 
+  private async ensureChatOpen(): Promise<void> {
+    if (!this.page) return;
+    try {
+      const hasChatSidebar = await this.page.evaluate(() => {
+        return !!document.querySelector('[class*="ChatSidebar"], [class*="chat-sidebar"]');
+      });
+      if (!hasChatSidebar) {
+        await this.page.evaluate(() => {
+          const btns = Array.from(document.querySelectorAll("button"));
+          const chatBtn = btns.find(b => (b.textContent || "").trim().toLowerCase() === "chat");
+          if (chatBtn) chatBtn.click();
+        });
+        await new Promise(r => setTimeout(r, 600));
+      }
+    } catch {}
+  }
+
   private async runChatMonitorLoop(): Promise<void> {
     if (!this.autoNavRunning || !this.page) return;
 
     try {
+      await this.ensureChatOpen();
       const messages = await this.readChatMessages();
       const newMessages = messages.filter(m => !this.seenChatMessages.has(m.key));
 
@@ -968,7 +1011,7 @@ export class HubsBot {
     }
 
     if (this.autoNavRunning) {
-      this.chatMonitorInterval = setTimeout(() => this.runChatMonitorLoop(), 3000);
+      this.chatMonitorInterval = setTimeout(() => this.runChatMonitorLoop(), 4000);
     }
   }
 
