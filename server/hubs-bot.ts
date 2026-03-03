@@ -25,6 +25,17 @@ const AUTO_NAV_MESSAGES = [
   "Beautiful scenery",
 ];
 
+const ENTRANCE_GREETINGS = [
+  "Hey everyone! Just arrived, this place looks amazing!",
+  "Hi all! Excited to be here!",
+  "Hello! Just dropped in, what's going on?",
+  "Hey! I'm here! What a cool space!",
+  "Yo! Just joined, love the vibe in here!",
+  "Hi there! Great to be in this world!",
+  "Hello hello! Anyone around to chat?",
+  "Hey! Just entered, this is awesome!",
+];
+
 const CONVERSATIONAL_RESPONSES: Record<string, string[]> = {
   greeting: [
     "Hey! How's it going?",
@@ -667,6 +678,10 @@ export class HubsBot {
       await this.updateStatus("connected", `Bot ready at: ${this.roomUrl}`, this.roomUrl);
       await this.dumpPageState("final-state");
       await storage.addLog(this.botId, "=== Room entry sequence complete ===");
+
+      const greeting = ENTRANCE_GREETINGS[Math.floor(Math.random() * ENTRANCE_GREETINGS.length)];
+      await new Promise(r => setTimeout(r, 2000));
+      await this.sendChat(greeting);
 
       await this.startAutoNav();
     } catch (err: any) {
