@@ -428,6 +428,15 @@ export class HubsBot {
         }
       }
 
+      // Step 4: Dismiss "Welcome to App" tour dialog if present
+      await new Promise(resolve => setTimeout(resolve, 3000));
+      const skippedTour = await this.clickButtonByText(["skip tour", "skip", "close", "got it", "dismiss"]);
+      if (skippedTour) {
+        await storage.addLog(`Dismissed tour dialog: "${skippedTour}"`);
+        await new Promise(resolve => setTimeout(resolve, 1000));
+      }
+
+      await this.updateStatus("connected", `Bot ready at: ${this.roomUrl}`, this.roomUrl);
       await this.dumpPageState("final-state");
       await storage.addLog("=== Room entry sequence complete ===");
     } catch (err: any) {
