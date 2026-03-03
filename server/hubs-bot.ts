@@ -322,16 +322,46 @@ export class HubsBot {
     }
   }
 
+  private async waitForButton(textPatterns: string[], maxWaitSecs: number): Promise<boolean> {
+    if (!this.page) return false;
+    for (let i = 0; i < maxWaitSecs; i++) {
+      const found = await this.page.evaluate((patterns: string[]) => {
+        const elements = Array.from(document.querySelectorAll("button, a[role='button'], [role='button']"));
+        for (const pattern of patterns) {
+          const lowerPattern = pattern.toLowerCase();
+          for (const el of elements) {
+            const text = (el.textContent || "").trim().toLowerCase();
+            if (text === lowerPattern || text.includes(lowerPattern)) {
+              return true;
+            }
+          }
+        }
+        return false;
+      }, textPatterns);
+      if (found) return true;
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    }
+    await storage.addLog(`Waited ${maxWaitSecs}s but didn't find buttons: ${textPatterns.join(", ")}`);
+    return false;
+  }
+
   private async clickButtonByText(textPatterns: string[]): Promise<string | null> {
     if (!this.page) return null;
 
     const clicked = await this.page.evaluate((patterns: string[]) => {
-      const elements = Array.from(document.querySelectorAll("button, a[role='button'], [role='button'], a"));
+      const elements = Array.from(document.querySelectorAll("button, [role='button']"));
       for (const pattern of patterns) {
         const lowerPattern = pattern.toLowerCase();
         for (const el of elements) {
           const text = (el.textContent || "").trim().toLowerCase();
-          if (text === lowerPattern || text.includes(lowerPattern)) {
+          if (text === lowerPattern) {
+            (el as HTMLElement).click();
+            return (el.textContent || "").trim();
+          }
+        }
+        for (const el of elements) {
+          const text = (el.textContent || "").trim().toLowerCase();
+          if (text.includes(lowerPattern) && text.length < 40) {
             (el as HTMLElement).click();
             return (el.textContent || "").trim();
           }
@@ -373,6 +403,7 @@ export class HubsBot {
       }
 
       // Step 2: Click "Accept" on the avatar/name configuration screen
+      await this.waitForButton(["accept"], 10);
       const clicked2 = await this.clickButtonByText(["accept"]);
       if (clicked2) {
         await this.updateStatus("logging_in", "Accepted avatar settings, waiting for entry screen...");
@@ -381,15 +412,15 @@ export class HubsBot {
       }
 
       // Step 3: Click "Enter Room" to actually join the 3D space
+      await this.waitForButton(["enter room"], 10);
       const clicked3 = await this.clickButtonByText(["enter room"]);
       if (clicked3) {
         await this.updateStatus("connected", "Entered the room!");
         await new Promise(resolve => setTimeout(resolve, 5000));
         await this.autoScreenshot("in-room");
       } else {
-        // Maybe we need "Enter on Screen" or similar
         const altEnter = await this.clickButtonByText([
-          "enter on screen", "enter", "connect", "continue", "spawn"
+          "enter on screen", "enter on device"
         ]);
         if (altEnter) {
           await this.updateStatus("connected", `Entered via: ${altEnter}`);
