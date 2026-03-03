@@ -70,26 +70,50 @@ export class HubsBot {
     }
 
     const data = await response.json() as any;
-    await storage.addLog(`Auth response structure: ${JSON.stringify(Object.keys(data))}`);
+    await storage.addLog(`Auth response keys: ${JSON.stringify(Object.keys(data))}`);
     
+    if (data.token) {
+      await storage.addLog(`data.token type: ${typeof data.token}`);
+      if (typeof data.token === "object") {
+        await storage.addLog(`data.token keys: ${JSON.stringify(Object.keys(data.token))}`);
+        await storage.addLog(`data.token preview: ${JSON.stringify(data.token).slice(0, 300)}`);
+      }
+    }
+    if (data.user) {
+      await storage.addLog(`data.user type: ${typeof data.user}`);
+      if (typeof data.user === "object") {
+        await storage.addLog(`data.user keys: ${JSON.stringify(Object.keys(data.user))}`);
+      }
+    }
+
     let token: string | undefined;
-    if (data.token) token = data.token;
-    else if (data.access_token) token = data.access_token;
-    else if (data.accessToken) token = data.accessToken;
-    else if (data.data?.token) token = data.data.token;
-    else if (data.data?.access_token) token = data.data.access_token;
-    else if (data.data?.accessToken) token = data.data.accessToken;
-    else if (data.result?.token) token = data.result.token;
-    else if (data.user?.token) token = data.user.token;
+    
+    const findToken = (obj: any): string | undefined => {
+      if (!obj || typeof obj !== "object") return undefined;
+      for (const key of ["token", "access_token", "accessToken", "jwt", "id_token", "idToken", "session_token"]) {
+        if (typeof obj[key] === "string" && obj[key].length > 10) {
+          return obj[key];
+        }
+      }
+      for (const key of Object.keys(obj)) {
+        if (typeof obj[key] === "object" && obj[key]) {
+          const found = findToken(obj[key]);
+          if (found) return found;
+        }
+      }
+      return undefined;
+    };
+
+    token = findToken(data);
 
     if (!token) {
-      const safePreview = JSON.stringify(data).slice(0, 300);
-      await storage.addLog(`Auth response preview (looking for token): ${safePreview}`);
-      throw new Error("No token found in auth response. Keys: " + Object.keys(data).join(", "));
+      await storage.addLog(`FULL auth response: ${JSON.stringify(data).slice(0, 500)}`);
+      throw new Error("No string token found in auth response");
     }
 
     this.authToken = token;
-    await this.updateStatus("authenticating", `Authentication successful! Token length: ${token.length}`);
+    await storage.addLog(`Token found (type=${typeof token}, length=${token.length}, prefix=${token.slice(0, 20)}...)`);
+    await this.updateStatus("authenticating", "Authentication successful!");
     return token;
   }
 
@@ -202,7 +226,7 @@ export class HubsBot {
   private async waitForLobbyUI(): Promise<void> {
     if (!this.page) return;
 
-    for (let i = 0; i < 20; i++) {
+    for (let i = 0; i < 15; i++) {
       await new Promise(resolve => setTimeout(resolve, 2000));
 
       const state = await this.page.evaluate(() => {
@@ -210,14 +234,17 @@ export class HubsBot {
         const buttonTexts = allButtons.map(b => (b.textContent || "").trim()).filter(t => t.length > 0);
         const hasCanvas = !!document.querySelector("canvas");
         const hasScene = !!document.querySelector("a-scene");
-        const allLinks = Array.from(document.querySelectorAll("a"));
-        const linkTexts = allLinks.map(a => `${(a.textContent || "").trim()}[${a.href}]`).filter(t => t.length > 2).slice(0, 10);
+        const allDivs = document.querySelectorAll("div").length;
+        const allSpans = document.querySelectorAll("span").length;
         const inputCount = document.querySelectorAll("input").length;
-        return { buttonTexts, hasCanvas, hasScene, linkTexts, inputCount, buttonCount: allButtons.length };
+        const bodyLength = document.body?.innerText?.length || 0;
+        const iframes = document.querySelectorAll("iframe").length;
+        const shadowHosts = Array.from(document.querySelectorAll("*")).filter(el => el.shadowRoot).length;
+        return { buttonTexts, hasCanvas, hasScene, inputCount, buttonCount: allButtons.length, allDivs, allSpans, bodyLength, iframes, shadowHosts };
       });
 
       await storage.addLog(
-        `Wait ${i + 1}/20: buttons=${state.buttonCount}(${state.buttonTexts.slice(0, 5).join(", ")}) canvas=${state.hasCanvas} scene=${state.hasScene} inputs=${state.inputCount}`
+        `Wait ${i + 1}/15: btns=${state.buttonCount}(${state.buttonTexts.slice(0, 5).join(", ")}) canvas=${state.hasCanvas} scene=${state.hasScene} divs=${state.allDivs} spans=${state.allSpans} bodyLen=${state.bodyLength} iframes=${state.iframes} shadowHosts=${state.shadowHosts}`
       );
 
       if (state.buttonTexts.some(t => {
@@ -229,9 +256,9 @@ export class HubsBot {
         return;
       }
 
-      if (state.hasCanvas && state.buttonCount > 0 && i >= 5) {
-        await storage.addLog("Canvas + buttons found, proceeding...");
-        await new Promise(resolve => setTimeout(resolve, 2000));
+      if (state.hasScene && i >= 5) {
+        await storage.addLog("Scene loaded, proceeding to check page state...");
+        await new Promise(resolve => setTimeout(resolve, 3000));
         return;
       }
     }
@@ -243,30 +270,55 @@ export class HubsBot {
     if (!this.page) return;
 
     const state = await this.page.evaluate(() => {
-      const allElements = document.querySelectorAll("button, a, input, [role='button']");
+      const allElements = document.querySelectorAll("button, a, input, [role='button'], [class*='enter'], [class*='join'], [class*='lobby'], [class*='room']");
       const items: string[] = [];
       allElements.forEach((el) => {
         const tag = el.tagName.toLowerCase();
-        const text = (el.textContent || "").trim().slice(0, 40);
-        const classes = (el.className || "").toString().slice(0, 60);
+        const text = (el.textContent || "").trim().slice(0, 60);
+        const classes = (el.className || "").toString().slice(0, 80);
         const id = el.id || "";
         const href = (el as HTMLAnchorElement).href || "";
-        const type = (el as HTMLInputElement).type || "";
-        items.push(`<${tag} id="${id}" class="${classes}" type="${type}" href="${href}">${text}</${tag}>`);
+        const dataAttrs = Array.from(el.attributes).filter(a => a.name.startsWith("data-")).map(a => `${a.name}="${a.value}"`).join(" ");
+        items.push(`<${tag} id="${id}" class="${classes}" ${dataAttrs}>${text}</${tag}>`);
       });
+
+      const rootDiv = document.getElementById("root") || document.getElementById("app") || document.getElementById("ui-root");
+      const rootHtml = rootDiv ? rootDiv.innerHTML.slice(0, 500) : "no root div found";
+
+      const hubsStore = localStorage.getItem("___hubs_store");
+      let storePreview = "not set";
+      if (hubsStore) {
+        try {
+          const parsed = JSON.parse(hubsStore);
+          storePreview = `keys: ${Object.keys(parsed).join(", ")}`;
+          if (parsed.credentials) {
+            storePreview += ` | credentials.keys: ${Object.keys(parsed.credentials).join(", ")}`;
+            storePreview += ` | token type: ${typeof parsed.credentials.token}`;
+            if (typeof parsed.credentials.token === "string") {
+              storePreview += ` | token length: ${parsed.credentials.token.length}`;
+            }
+          }
+        } catch { storePreview = hubsStore.slice(0, 200); }
+      }
+
       return {
         url: window.location.href,
         title: document.title,
         bodyText: document.body?.innerText?.slice(0, 500) || "",
         elements: items.slice(0, 30),
+        rootHtml,
+        storePreview,
       };
     });
 
     await storage.addLog(`[${label}] URL: ${state.url}`);
     await storage.addLog(`[${label}] Title: ${state.title}`);
-    await storage.addLog(`[${label}] Body text: ${state.bodyText.slice(0, 200)}`);
+    await storage.addLog(`[${label}] Hubs store: ${state.storePreview}`);
+    await storage.addLog(`[${label}] Body text: ${state.bodyText.slice(0, 300)}`);
+    await storage.addLog(`[${label}] Root HTML: ${state.rootHtml.slice(0, 300)}`);
+    await storage.addLog(`[${label}] Found ${state.elements.length} interactive elements:`);
     for (const el of state.elements) {
-      await storage.addLog(`[${label}] ${el}`);
+      await storage.addLog(`[${label}]   ${el}`);
     }
   }
 
@@ -300,40 +352,52 @@ export class HubsBot {
     try {
       await storage.addLog("=== Starting room entry sequence ===");
 
+      // Step 1: Click "Join Room" on the lobby page
       const clicked1 = await this.clickButtonByText([
-        "join room", "join", "enter room", "enter", "enter world", "connect"
+        "join room", "join"
       ]);
 
       if (clicked1) {
-        await this.updateStatus("logging_in", `Clicked "${clicked1}", waiting for next step...`);
-        await new Promise(resolve => setTimeout(resolve, 5000));
-        await this.autoScreenshot("after-join-click");
-        await this.dumpPageState("after-join-click");
-
-        const clicked2 = await this.clickButtonByText([
-          "enter on screen", "enter room", "enter", "accept", "agree", "continue",
-          "ok", "got it", "close", "connect", "spawn"
-        ]);
-
-        if (clicked2) {
-          await storage.addLog(`Clicked secondary: "${clicked2}"`);
-          await new Promise(resolve => setTimeout(resolve, 5000));
-          await this.autoScreenshot("after-secondary-click");
-          await this.dumpPageState("after-secondary-click");
-
-          const clicked3 = await this.clickButtonByText([
-            "enter room", "enter", "join", "connect", "spawn", "continue"
-          ]);
-          if (clicked3) {
-            await storage.addLog(`Clicked tertiary: "${clicked3}"`);
-            await new Promise(resolve => setTimeout(resolve, 5000));
-          }
-        }
+        await this.updateStatus("logging_in", "Clicked Join Room, waiting for avatar screen...");
+        await new Promise(resolve => setTimeout(resolve, 4000));
+        await this.autoScreenshot("after-join");
       } else {
-        await storage.addLog("No join/enter button found to click");
-        await this.dumpPageState("no-button-found");
+        await storage.addLog("No Join Room button found, checking for other entry points...");
+        const altClick = await this.clickButtonByText(["enter room", "enter", "connect"]);
+        if (altClick) {
+          await new Promise(resolve => setTimeout(resolve, 4000));
+        } else {
+          await this.dumpPageState("no-entry-button");
+          return;
+        }
       }
 
+      // Step 2: Click "Accept" on the avatar/name configuration screen
+      const clicked2 = await this.clickButtonByText(["accept"]);
+      if (clicked2) {
+        await this.updateStatus("logging_in", "Accepted avatar settings, waiting for entry screen...");
+        await new Promise(resolve => setTimeout(resolve, 4000));
+        await this.autoScreenshot("after-accept");
+      }
+
+      // Step 3: Click "Enter Room" to actually join the 3D space
+      const clicked3 = await this.clickButtonByText(["enter room"]);
+      if (clicked3) {
+        await this.updateStatus("connected", "Entered the room!");
+        await new Promise(resolve => setTimeout(resolve, 5000));
+        await this.autoScreenshot("in-room");
+      } else {
+        // Maybe we need "Enter on Screen" or similar
+        const altEnter = await this.clickButtonByText([
+          "enter on screen", "enter", "connect", "continue", "spawn"
+        ]);
+        if (altEnter) {
+          await this.updateStatus("connected", `Entered via: ${altEnter}`);
+          await new Promise(resolve => setTimeout(resolve, 5000));
+        }
+      }
+
+      await this.dumpPageState("final-state");
       await storage.addLog("=== Room entry sequence complete ===");
     } catch (err: any) {
       await storage.addLog(`Room entry error: ${err.message}`);
