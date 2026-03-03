@@ -25,6 +25,73 @@ const AUTO_NAV_MESSAGES = [
   "Beautiful scenery",
 ];
 
+const CONVERSATIONAL_RESPONSES: Record<string, string[]> = {
+  greeting: [
+    "Hey! How's it going?",
+    "Hi there! Nice to meet you!",
+    "Hello! Welcome to the space!",
+    "Hey! Great to see someone here!",
+    "What's up! Having a good time?",
+  ],
+  question: [
+    "Good question! I'm just exploring around here.",
+    "Hmm, not sure about that. I'm still learning my way around!",
+    "That's interesting, let me think about it...",
+    "I wish I knew! I'm just wandering around enjoying the scenery.",
+  ],
+  compliment: [
+    "Thanks! You're too kind!",
+    "Appreciate that! This place is pretty cool, right?",
+    "Thank you! I love hanging out here.",
+    "That's so nice of you to say!",
+  ],
+  farewell: [
+    "See you later! It was nice chatting!",
+    "Bye! Take care!",
+    "Catch you around! Have a great day!",
+    "Later! Come back soon!",
+  ],
+  agree: [
+    "Totally agree!",
+    "Yeah, for sure!",
+    "Right? I think so too!",
+    "Absolutely! You're spot on.",
+    "100% agree with that!",
+  ],
+  general: [
+    "That's cool! Tell me more.",
+    "Interesting! I hadn't thought of it that way.",
+    "Ha, nice one!",
+    "Oh really? That's awesome!",
+    "I hear you! This place is full of surprises.",
+    "Yeah, this virtual world is something else!",
+    "Haha, I know right?",
+    "That's a great point!",
+    "Oh wow, thanks for sharing!",
+    "I'm loving the vibes here!",
+  ],
+};
+
+function classifyMessage(msg: string): string {
+  const lower = msg.toLowerCase().trim();
+  const greetings = ["hi", "hello", "hey", "sup", "yo", "howdy", "greetings", "what's up", "whats up", "hola", "hii", "heya"];
+  if (greetings.some(g => lower === g || lower.startsWith(g + " ") || lower.startsWith(g + "!"))) return "greeting";
+  const farewells = ["bye", "goodbye", "see you", "later", "cya", "gtg", "gotta go", "leaving", "peace out"];
+  if (farewells.some(f => lower.includes(f))) return "farewell";
+  if (lower.includes("?") || lower.startsWith("what") || lower.startsWith("how") || lower.startsWith("why") || lower.startsWith("where") || lower.startsWith("when") || lower.startsWith("who") || lower.startsWith("do you") || lower.startsWith("can you") || lower.startsWith("are you")) return "question";
+  const compliments = ["nice", "cool", "awesome", "great", "amazing", "love", "beautiful", "good job", "well done", "impressive", "fantastic"];
+  if (compliments.some(c => lower.includes(c))) return "compliment";
+  const agreements = ["yeah", "yes", "true", "right", "agree", "exactly", "same", "yep", "yup", "totally", "indeed", "for sure"];
+  if (agreements.some(a => lower === a || lower.startsWith(a + " ") || lower.startsWith(a + "!"))) return "agree";
+  return "general";
+}
+
+function getConversationalResponse(message: string): string {
+  const category = classifyMessage(message);
+  const responses = CONVERSATIONAL_RESPONSES[category] || CONVERSATIONAL_RESPONSES.general;
+  return responses[Math.floor(Math.random() * responses.length)];
+}
+
 export class HubsBot {
   private browser: Browser | null = null;
   private page: Page | null = null;
@@ -35,6 +102,10 @@ export class HubsBot {
   private autoNavInterval: ReturnType<typeof setTimeout> | null = null;
   private autoNavRunning: boolean = false;
   private roomUrl: string = HUBS_BASE_URL;
+  private chatMonitorInterval: ReturnType<typeof setTimeout> | null = null;
+  private seenChatMessages: Set<string> = new Set();
+  private lastChatResponseTime: number = 0;
+  private botDisplayName: string = "";
 
   onStatusChange(listener: (status: BotStatus) => void) {
     this.statusListeners.add(listener);
@@ -757,12 +828,157 @@ export class HubsBot {
     }, message);
   }
 
+  private async readChatMessages(): Promise<{ author: string; text: string; key: string }[]> {
+    if (!this.page) return [];
+    try {
+      const messages = await this.page.evaluate(() => {
+        const results: { author: string; text: string; key: string }[] = [];
+        const chatMessages = document.querySelectorAll(
+          '[class*="chat-message"], [class*="ChatMessage"], [class*="message-group"], [class*="MessageGroup"]'
+        );
+        chatMessages.forEach((el) => {
+          const text = (el.textContent || "").trim();
+          if (text) {
+            const parts = text.split(/:\s+/);
+            if (parts.length >= 2) {
+              results.push({
+                author: parts[0].trim(),
+                text: parts.slice(1).join(": ").trim(),
+                key: text.slice(0, 100),
+              });
+            }
+          }
+        });
+
+        if (results.length === 0) {
+          const logEntries = document.querySelectorAll(
+            '[class*="presence-log"] li, [class*="MessageBubble"], [class*="chat"] [class*="entry"], [class*="Chat"] li, [class*="chat-log"] > div'
+          );
+          logEntries.forEach((el) => {
+            const text = (el.textContent || "").trim();
+            if (text && text.length > 2 && text.length < 500) {
+              const parts = text.split(/:\s+/);
+              if (parts.length >= 2) {
+                results.push({
+                  author: parts[0].trim(),
+                  text: parts.slice(1).join(": ").trim(),
+                  key: text.slice(0, 100),
+                });
+              }
+            }
+          });
+        }
+
+        if (results.length === 0) {
+          const chatSidebar = document.querySelector('[class*="ChatSidebar"], [class*="chat-sidebar"], [class*="ChatPanel"]');
+          if (chatSidebar) {
+            const entries = chatSidebar.querySelectorAll("li, [class*='message'], [class*='Message'], div > p");
+            entries.forEach((el) => {
+              const text = (el.textContent || "").trim();
+              if (text && text.length > 2 && text.length < 500) {
+                const parts = text.split(/:\s+/);
+                if (parts.length >= 2) {
+                  results.push({
+                    author: parts[0].trim(),
+                    text: parts.slice(1).join(": ").trim(),
+                    key: text.slice(0, 100),
+                  });
+                }
+              }
+            });
+          }
+        }
+
+        return results;
+      });
+      return messages;
+    } catch {
+      return [];
+    }
+  }
+
+  private async startChatMonitor(): Promise<void> {
+    if (this.chatMonitorInterval) return;
+
+    this.botDisplayName = await this.getBotDisplayName();
+    await storage.addLog(`Chat monitor started (bot name: "${this.botDisplayName}")`);
+
+    const initialMessages = await this.readChatMessages();
+    for (const msg of initialMessages) {
+      this.seenChatMessages.add(msg.key);
+    }
+
+    this.runChatMonitorLoop();
+  }
+
+  private async stopChatMonitor(): Promise<void> {
+    if (this.chatMonitorInterval) {
+      clearTimeout(this.chatMonitorInterval);
+      this.chatMonitorInterval = null;
+    }
+  }
+
+  private async getBotDisplayName(): Promise<string> {
+    if (!this.page) return "";
+    try {
+      const name = await this.page.evaluate(() => {
+        try {
+          const store = JSON.parse(localStorage.getItem("___hubs_store") || "{}");
+          return store.profile?.displayName || "";
+        } catch { return ""; }
+      });
+      return name;
+    } catch { return ""; }
+  }
+
+  private async runChatMonitorLoop(): Promise<void> {
+    if (!this.autoNavRunning || !this.page) return;
+
+    try {
+      const messages = await this.readChatMessages();
+      const newMessages = messages.filter(m => !this.seenChatMessages.has(m.key));
+
+      for (const msg of newMessages) {
+        this.seenChatMessages.add(msg.key);
+
+        if (this.botDisplayName && msg.author.toLowerCase().includes(this.botDisplayName.toLowerCase())) {
+          continue;
+        }
+        if (msg.text.length < 2) continue;
+
+        const timeSinceLastResponse = Date.now() - this.lastChatResponseTime;
+        if (timeSinceLastResponse < 3000) continue;
+
+        await storage.addLog(`Chat received from "${msg.author}": "${msg.text}"`);
+
+        const replyDelay = 1500 + Math.floor(Math.random() * 3000);
+        await new Promise(resolve => setTimeout(resolve, replyDelay));
+
+        const response = getConversationalResponse(msg.text);
+        await this.sendChat(response);
+        this.lastChatResponseTime = Date.now();
+      }
+
+      if (this.seenChatMessages.size > 200) {
+        const entries = Array.from(this.seenChatMessages);
+        this.seenChatMessages = new Set(entries.slice(-100));
+      }
+    } catch (err: any) {
+      await storage.addLog(`Chat monitor error: ${err.message}`);
+    }
+
+    if (this.autoNavRunning) {
+      this.chatMonitorInterval = setTimeout(() => this.runChatMonitorLoop(), 3000);
+    }
+  }
+
   async startAutoNav(): Promise<void> {
     if (this.autoNavRunning) return;
     if (!this.page) throw new Error("Bot is not connected");
     this.autoNavRunning = true;
-    await storage.addLog("Auto-navigation started - bot will explore and chat randomly");
+    await storage.addLog("Auto-navigation started - bot will explore, chat, and respond to conversations");
     this.runAutoNavLoop();
+    this.startChatMonitor();
   }
 
   async stopAutoNav(): Promise<void> {
@@ -771,6 +987,7 @@ export class HubsBot {
       clearTimeout(this.autoNavInterval);
       this.autoNavInterval = null;
     }
+    await this.stopChatMonitor();
     await this.stopMovement();
     await storage.addLog("Auto-navigation stopped");
   }
@@ -825,7 +1042,9 @@ export class HubsBot {
 
   async stop(preserveError = false): Promise<void> {
     await this.stopAutoNav().catch(() => {});
+    await this.stopChatMonitor().catch(() => {});
     await this.stopMovement().catch(() => {});
+    this.seenChatMessages.clear();
     if (this.browser) {
       await this.browser.close().catch(() => {});
       this.browser = null;
