@@ -679,11 +679,11 @@ export class HubsBot {
       await this.dumpPageState("final-state");
       await storage.addLog(this.botId, "=== Room entry sequence complete ===");
 
+      await this.startAutoNav();
+
       const greeting = ENTRANCE_GREETINGS[Math.floor(Math.random() * ENTRANCE_GREETINGS.length)];
       await new Promise(r => setTimeout(r, 2000));
-      await this.sendChat(greeting);
-
-      await this.startAutoNav();
+      this.sendChat(greeting).catch(e => storage.addLog(this.botId, `Entrance greeting error: ${e.message}`));
     } catch (err: any) {
       await storage.addLog(this.botId, `Room entry error: ${err.message}`);
     }
@@ -814,6 +814,48 @@ export class HubsBot {
 
     await storage.addLog(this.botId, `Sending chat: "${message}"`);
 
+    try {
+      const sent = await this.page.evaluate((msg: string) => {
+        try {
+          if ((window as any).APP?.hubChannel?.sendMessage) {
+            (window as any).APP.hubChannel.sendMessage(msg);
+            return "hubChannel";
+          }
+          if ((window as any).APP?.hubChannel?.channel) {
+            (window as any).APP.hubChannel.channel.push("message", { body: msg, type: "chat" });
+            return "channel.push";
+          }
+          const scene = document.querySelector("a-scene") as any;
+          if (scene?.systems?.["hubs-systems"]?.chatSystem) {
+            scene.systems["hubs-systems"].chatSystem.send(msg);
+            return "chatSystem";
+          }
+          return null;
+        } catch (e: any) {
+          return `error:${e.message}`;
+        }
+      }, message);
+
+      if (sent && !sent.startsWith("error:")) {
+        await storage.addLog(this.botId, `Chat sent via ${sent}: "${message}"`);
+        return;
+      }
+
+      if (sent?.startsWith("error:")) {
+        await storage.addLog(this.botId, `API chat error: ${sent}, falling back to UI...`);
+      } else {
+        await storage.addLog(this.botId, `No chat API found, falling back to UI...`);
+      }
+
+      await this.sendChatViaUI(message);
+    } catch (err: any) {
+      await storage.addLog(this.botId, `sendChat error: ${err.message}`);
+    }
+  }
+
+  private async sendChatViaUI(message: string): Promise<void> {
+    if (!this.page) return;
+
     for (let attempt = 0; attempt < 3; attempt++) {
       const hasChatSidebar = await this.page.evaluate(() => {
         return !!document.querySelector('[class*="ChatSidebar"], [class*="chat-sidebar"]');
@@ -825,22 +867,66 @@ export class HubsBot {
           const chatBtn = btns.find(b => (b.textContent || "").trim().toLowerCase() === "chat");
           if (chatBtn) chatBtn.click();
         });
-        await new Promise(r => setTimeout(r, 1200));
+        await new Promise(r => setTimeout(r, 2000));
       }
 
-      const inputHandle = await this.findChatInput();
-      if (inputHandle) {
-        await inputHandle.click();
-        await new Promise(r => setTimeout(r, 150));
-        await inputHandle.evaluate((el: any) => { el.value = ""; });
-        await inputHandle.type(message, { delay: 10 });
-        await new Promise(r => setTimeout(r, 100));
-        await this.page.keyboard.press("Enter");
-        await storage.addLog(this.botId, `Chat sent: "${message}"`);
-        return;
+      const inputInfo = await this.page.evaluate(() => {
+        const selectors = [
+          'input[placeholder*="Send"]', 'input[placeholder*="send"]',
+          'input[placeholder*="message"]', 'input[placeholder*="Message"]',
+          'input[placeholder*="chat"]', 'input[placeholder*="Chat"]',
+          'textarea[placeholder*="Send"]', 'textarea[placeholder*="message"]',
+        ];
+        for (const sel of selectors) {
+          const el = document.querySelector(sel);
+          if (el) return { found: true, selector: sel, tag: el.tagName };
+        }
+        const sidebar = document.querySelector('[class*="ChatSidebar"]');
+        if (sidebar) {
+          const inputs = sidebar.querySelectorAll("input, textarea");
+          if (inputs.length > 0) return { found: true, selector: "sidebar-input", tag: inputs[0].tagName };
+        }
+        return { found: false, selector: "", tag: "" };
+      });
+
+      await storage.addLog(this.botId, `UI chat attempt ${attempt + 1}: input=${JSON.stringify(inputInfo)}`);
+
+      if (inputInfo.found) {
+        try {
+          let inputHandle;
+          if (inputInfo.selector === "sidebar-input") {
+            const sidebar = await this.page.$('[class*="ChatSidebar"]');
+            if (sidebar) {
+              const inputs = await sidebar.$$("input, textarea");
+              inputHandle = inputs.length > 0 ? inputs[0] : null;
+            }
+          } else {
+            inputHandle = await this.page.$(inputInfo.selector);
+          }
+          if (inputHandle) {
+            await inputHandle.click();
+            await new Promise(r => setTimeout(r, 100));
+            await inputHandle.evaluate((el: any) => { el.value = ""; });
+            await this.page.evaluate((sel: string, msg: string) => {
+              const el = document.querySelector(sel) as HTMLInputElement;
+              if (el) {
+                const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+                  window.HTMLInputElement.prototype, 'value'
+                )?.set;
+                if (nativeInputValueSetter) nativeInputValueSetter.call(el, msg);
+                el.dispatchEvent(new Event('input', { bubbles: true }));
+              }
+            }, inputInfo.selector !== "sidebar-input" ? inputInfo.selector : "input", message);
+            await new Promise(r => setTimeout(r, 100));
+            await this.page.keyboard.press("Enter");
+            await storage.addLog(this.botId, `Chat sent via UI: "${message}"`);
+            return;
+          }
+        } catch (e: any) {
+          await storage.addLog(this.botId, `UI input interaction failed: ${e.message}`);
+        }
       }
 
-      await storage.addLog(this.botId, `Chat input not found (attempt ${attempt + 1}/3), retrying...`);
       await this.page.evaluate(() => {
         const btns = Array.from(document.querySelectorAll("button"));
         const chatBtn = btns.find(b => (b.textContent || "").trim().toLowerCase() === "chat");
@@ -852,32 +938,11 @@ export class HubsBot {
         const chatBtn = btns.find(b => (b.textContent || "").trim().toLowerCase() === "chat");
         if (chatBtn) chatBtn.click();
       });
-      await new Promise(r => setTimeout(r, 1200));
+      await new Promise(r => setTimeout(r, 1500));
     }
 
-    await storage.addLog(this.botId, "Chat input not found after 3 attempts");
+    await storage.addLog(this.botId, "Chat input not found after 3 UI attempts");
     await this.dumpPageState("chat-input-search");
-  }
-
-  private async findChatInput(): Promise<any> {
-    if (!this.page) return null;
-    const selectors = [
-      'input[placeholder*="Send"]',
-      'input[placeholder*="send"]',
-      'input[placeholder*="message"]',
-      'input[placeholder*="Message"]',
-      'input[placeholder*="chat"]',
-      'input[placeholder*="Chat"]',
-      'textarea[placeholder*="Send"]',
-      'textarea[placeholder*="message"]',
-    ];
-    for (const sel of selectors) {
-      const el = await this.page.$(sel);
-      if (el) return el;
-    }
-    const allInputs = await this.page.$$("input[type='text']");
-    if (allInputs.length > 0) return allInputs[allInputs.length - 1];
-    return null;
   }
 
   private async readChatMessages(): Promise<{ author: string; text: string; key: string }[]> {
@@ -957,8 +1022,13 @@ export class HubsBot {
 
     const initialMessages = await this.readChatMessages();
     for (const msg of initialMessages) {
-      this.seenChatMessages.add(msg.key);
+      const isOwnMessage = this.botDisplayName && msg.author.toLowerCase().includes(this.botDisplayName.toLowerCase());
+      const isSystemMessage = msg.text.includes("entered the room") || msg.text.includes("joined") || msg.text.includes("left the room");
+      if (isOwnMessage || isSystemMessage) {
+        this.seenChatMessages.add(msg.key);
+      }
     }
+    await storage.addLog(this.botId, `Chat monitor initialized: ${initialMessages.length} existing messages, ${this.seenChatMessages.size} marked as own/system`);
 
     this.runChatMonitorLoop();
   }
@@ -1016,7 +1086,6 @@ export class HubsBot {
     if (!this.autoNavRunning || !this.page) return;
 
     try {
-      await this.ensureChatOpen();
       const messages = await this.readChatMessages();
       const newMessages = messages.filter(m => !this.seenChatMessages.has(m.key));
 
