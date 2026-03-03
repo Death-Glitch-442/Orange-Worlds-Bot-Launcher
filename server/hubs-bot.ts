@@ -1014,16 +1014,16 @@ export class HubsBot {
         );
 
         const timeSinceLastResponse = Date.now() - this.lastChatResponseTime;
-        const minDelay = isFromOtherBot ? 8000 : 3000;
+        const minDelay = isFromOtherBot ? 3000 : 1500;
         if (timeSinceLastResponse < minDelay) continue;
 
-        if (isFromOtherBot && Math.random() < 0.4) continue;
+        if (isFromOtherBot && Math.random() < 0.15) continue;
 
         await storage.addLog(this.botId, `Chat received from "${msg.author}": "${msg.text}"`);
 
         const replyDelay = isFromOtherBot 
-          ? 3000 + Math.floor(Math.random() * 5000)
-          : 1500 + Math.floor(Math.random() * 3000);
+          ? 1000 + Math.floor(Math.random() * 2000)
+          : 500 + Math.floor(Math.random() * 1500);
         await new Promise(resolve => setTimeout(resolve, replyDelay));
 
         const response = getConversationalResponse(msg.text);
@@ -1040,7 +1040,7 @@ export class HubsBot {
     }
 
     if (this.autoNavRunning) {
-      this.chatMonitorInterval = setTimeout(() => this.runChatMonitorLoop(), 4000);
+      this.chatMonitorInterval = setTimeout(() => this.runChatMonitorLoop(), 1500);
     }
   }
 
@@ -1091,23 +1091,23 @@ export class HubsBot {
       } else if (action < 0.7) {
         const turnAmount = (Math.random() - 0.5) * 200;
         await this.look(turnAmount, (Math.random() - 0.5) * 30);
-      } else if (action < 0.8) {
+      } else if (action < 0.78) {
         await this.jump();
-        await new Promise(resolve => setTimeout(resolve, 500));
-        await this.move("forward", 1000 + Math.floor(Math.random() * 1500));
-      } else if (action < 0.88) {
+        await new Promise(resolve => setTimeout(resolve, 400));
+        await this.move("forward", 800 + Math.floor(Math.random() * 1000));
+      } else if (action < 0.95) {
         const msg = AUTO_NAV_MESSAGES[Math.floor(Math.random() * AUTO_NAV_MESSAGES.length)];
         await this.sendChat(msg);
       } else {
         await storage.addLog(this.botId, "Auto-nav: pausing briefly...");
-        await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
+        await new Promise(resolve => setTimeout(resolve, 500 + Math.random() * 1000));
       }
     } catch (err: any) {
       await storage.addLog(this.botId, `Auto-nav action error: ${err.message}`);
     }
 
     if (this.autoNavRunning) {
-      const delay = 1500 + Math.floor(Math.random() * 3500);
+      const delay = 800 + Math.floor(Math.random() * 1500);
       this.autoNavInterval = setTimeout(() => this.runAutoNavLoop(), delay);
     }
   }
