@@ -3,7 +3,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
-import { Badge } from "@/components/ui/badge";
 import { Separator } from "@/components/ui/separator";
 import type { BotStatus } from "@shared/schema";
 import {
@@ -24,6 +23,9 @@ import {
   Globe,
   DoorOpen,
   MoveUp,
+  Navigation,
+  MessageSquare,
+  Send,
 } from "lucide-react";
 
 function StatusBadge({ status }: { status: BotStatus["status"] }) {
@@ -60,6 +62,8 @@ export default function Dashboard() {
   const [logs, setLogs] = useState<string[]>([]);
   const [status, setStatus] = useState<BotStatus | null>(null);
   const [screenshot, setScreenshot] = useState<string | null>(null);
+  const [autoNav, setAutoNav] = useState(false);
+  const [chatMessage, setChatMessage] = useState("");
   const logsEndRef = useRef<HTMLDivElement>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -74,7 +78,7 @@ export default function Dashboard() {
         if (msg.type === "status") {
           setStatus(msg.data);
         } else if (msg.type === "log") {
-          setLogs((prev) => [...prev.slice(-99), msg.data]);
+          setLogs((prev) => [...prev.slice(-199), msg.data]);
         }
       } catch {
       }
@@ -98,6 +102,16 @@ export default function Dashboard() {
     queryKey: ["/api/bot/logs"],
     queryFn: () => fetch("/api/bot/logs").then((r) => r.json()),
   });
+
+  const { data: autoNavStatus } = useQuery<{ autoNav: boolean }>({
+    queryKey: ["/api/bot/auto-nav"],
+    queryFn: () => fetch("/api/bot/auto-nav").then((r) => r.json()),
+    refetchInterval: 5000,
+  });
+
+  useEffect(() => {
+    if (autoNavStatus) setAutoNav(autoNavStatus.autoNav);
+  }, [autoNavStatus]);
 
   useEffect(() => {
     if (initialStatus && !status) setStatus(initialStatus);
@@ -158,9 +172,29 @@ export default function Dashboard() {
     });
   }, [roomUrl]);
 
+  const toggleAutoNav = useCallback(async () => {
+    const newState = !autoNav;
+    setAutoNav(newState);
+    await fetch("/api/bot/auto-nav", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ enabled: newState }),
+    });
+  }, [autoNav]);
+
+  const sendChat = useCallback(async () => {
+    if (!chatMessage.trim()) return;
+    await fetch("/api/bot/chat", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: chatMessage.trim() }),
+    });
+    setChatMessage("");
+  }, [chatMessage]);
+
   useEffect(() => {
     const handleKeyDown = (e: KeyboardEvent) => {
-      if ((e.target as HTMLElement).tagName === "INPUT") return;
+      if ((e.target as HTMLElement).tagName === "INPUT" || (e.target as HTMLElement).tagName === "TEXTAREA") return;
       const map: Record<string, string> = { w: "forward", s: "backward", a: "left", d: "right" };
       if (map[e.key]) {
         e.preventDefault();
@@ -192,6 +226,21 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="flex items-center gap-3">
+            {isConnected && (
+              <Button
+                data-testid="button-auto-nav"
+                onClick={toggleAutoNav}
+                variant="outline"
+                size="sm"
+                className={autoNav
+                  ? "border-emerald-700 bg-emerald-950/40 hover:bg-emerald-900/50 text-emerald-300"
+                  : "border-zinc-700 bg-zinc-900/40 hover:bg-zinc-800/60 text-zinc-400"
+                }
+              >
+                <Navigation className={`w-3.5 h-3.5 mr-1.5 ${autoNav ? "animate-pulse" : ""}`} />
+                {autoNav ? "Auto-Nav ON" : "Auto-Nav OFF"}
+              </Button>
+            )}
             {status && <StatusBadge status={status.status} />}
           </div>
         </div>
@@ -376,6 +425,37 @@ export default function Dashboard() {
                 </p>
               </CardContent>
             </Card>
+
+            <Card className="bg-[#12121c] border-zinc-800/60">
+              <CardHeader className="pb-3">
+                <CardTitle className="text-sm font-medium text-zinc-400 flex items-center gap-2">
+                  <MessageSquare className="w-4 h-4" />
+                  Chat
+                </CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex gap-2">
+                  <Input
+                    data-testid="input-chat"
+                    value={chatMessage}
+                    onChange={(e) => setChatMessage(e.target.value)}
+                    onKeyDown={(e) => { if (e.key === "Enter") sendChat(); }}
+                    placeholder="Type a message..."
+                    disabled={!isConnected}
+                    className="bg-zinc-900/60 border-zinc-700/60 text-zinc-200 placeholder:text-zinc-600 focus:border-violet-500/50 focus:ring-violet-500/20 disabled:opacity-30"
+                  />
+                  <Button
+                    data-testid="button-send-chat"
+                    onClick={sendChat}
+                    disabled={!isConnected || !chatMessage.trim()}
+                    size="icon"
+                    className="bg-violet-600 hover:bg-violet-500 border-0 text-white shrink-0 disabled:opacity-30"
+                  >
+                    <Send className="w-4 h-4" />
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
           </div>
 
           <div className="lg:col-span-2 space-y-6">
@@ -440,10 +520,14 @@ export default function Dashboard() {
                           className={`leading-relaxed ${
                             log.includes("error") || log.includes("Error") || log.includes("failed")
                               ? "text-red-400"
-                              : log.includes("success") || log.includes("Success") || log.includes("Connected")
+                              : log.includes("success") || log.includes("Success") || log.includes("Connected") || log.includes("Entered")
                               ? "text-emerald-400"
-                              : log.includes("Moving") || log.includes("Jump") || log.includes("Look")
+                              : log.includes("Moving") || log.includes("Jump") || log.includes("Look") || log.includes("Auto-nav")
                               ? "text-cyan-400"
+                              : log.includes("Sending chat") || log.includes("Chat")
+                              ? "text-amber-400"
+                              : log.includes("Auto-navigation")
+                              ? "text-violet-400"
                               : "text-zinc-400"
                           }`}
                         >

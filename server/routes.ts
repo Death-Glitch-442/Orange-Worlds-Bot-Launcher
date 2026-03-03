@@ -111,6 +111,38 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/bot/auto-nav", async (req, res) => {
+    try {
+      const { enabled } = req.body;
+      if (enabled) {
+        await hubsBot.startAutoNav();
+        res.json({ message: "Auto-navigation started", autoNav: true });
+      } else {
+        await hubsBot.stopAutoNav();
+        res.json({ message: "Auto-navigation stopped", autoNav: false });
+      }
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
+  app.get("/api/bot/auto-nav", async (_req, res) => {
+    res.json({ autoNav: hubsBot.isAutoNavActive() });
+  });
+
+  app.post("/api/bot/chat", async (req, res) => {
+    try {
+      const { message } = req.body;
+      if (!message || typeof message !== "string") {
+        return res.status(400).json({ error: "message is required" });
+      }
+      await hubsBot.sendChat(message);
+      res.json({ message: "Chat sent" });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   app.get("/api/bot/screenshot", async (_req, res) => {
     try {
       const screenshot = await hubsBot.takeScreenshot();

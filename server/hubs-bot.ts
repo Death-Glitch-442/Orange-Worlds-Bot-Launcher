@@ -7,6 +7,24 @@ const CHROMIUM_PATH = "/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.
 const HUBS_BASE_URL = "https://worlds.orangeweb3.com";
 const BEDROCK_API_URL = "https://api.bedrockpassport.com/orange/v1";
 
+const AUTO_NAV_MESSAGES = [
+  "Hello everyone!",
+  "Nice place!",
+  "Just exploring around...",
+  "This world is awesome!",
+  "Anyone here?",
+  "Checking things out",
+  "Cool vibes in here",
+  "Love the design of this space",
+  "Walking around the town",
+  "What a great virtual world!",
+  "Hey there!",
+  "Greetings from the bot!",
+  "This is fun!",
+  "Exploring Juice Town",
+  "Beautiful scenery",
+];
+
 export class HubsBot {
   private browser: Browser | null = null;
   private page: Page | null = null;
@@ -14,6 +32,9 @@ export class HubsBot {
   private statusListeners: Set<(status: BotStatus) => void> = new Set();
   private starting: boolean = false;
   private lastScreenshot: string | null = null;
+  private autoNavInterval: ReturnType<typeof setTimeout> | null = null;
+  private autoNavRunning: boolean = false;
+  private roomUrl: string = HUBS_BASE_URL;
 
   onStatusChange(listener: (status: BotStatus) => void) {
     this.statusListeners.add(listener);
@@ -439,6 +460,8 @@ export class HubsBot {
       await this.updateStatus("connected", `Bot ready at: ${this.roomUrl}`, this.roomUrl);
       await this.dumpPageState("final-state");
       await storage.addLog("=== Room entry sequence complete ===");
+
+      await this.startAutoNav();
     } catch (err: any) {
       await storage.addLog(`Room entry error: ${err.message}`);
     }
@@ -564,7 +587,128 @@ export class HubsBot {
     };
   }
 
+  async sendChat(message: string): Promise<void> {
+    if (!this.page) throw new Error("Browser not launched");
+
+    await storage.addLog(`Sending chat: "${message}"`);
+
+    await this.page.evaluate(async (msg: string) => {
+      const chatBtn = Array.from(document.querySelectorAll("button")).find(
+        (b) => (b.textContent || "").trim().toLowerCase() === "chat"
+      );
+      if (chatBtn) chatBtn.click();
+      await new Promise((r) => setTimeout(r, 500));
+
+      const chatInput = document.querySelector(
+        'input[type="text"][placeholder*="Send"], input[type="text"][placeholder*="message"], textarea, .chat-input input, input.TextInput__text-input__HqvuV'
+      ) as HTMLInputElement | null;
+
+      const allInputs = Array.from(document.querySelectorAll("input[type='text'], textarea")) as HTMLInputElement[];
+      const input = chatInput || allInputs.find((i) => {
+        const placeholder = (i.placeholder || "").toLowerCase();
+        return placeholder.includes("message") || placeholder.includes("send") || placeholder.includes("chat");
+      }) || allInputs[allInputs.length - 1];
+
+      if (input) {
+        input.focus();
+        input.value = msg;
+        input.dispatchEvent(new Event("input", { bubbles: true }));
+        input.dispatchEvent(new Event("change", { bubbles: true }));
+        const nativeInputValueSetter = Object.getOwnPropertyDescriptor(
+          window.HTMLInputElement.prototype, "value"
+        )?.set;
+        if (nativeInputValueSetter) {
+          nativeInputValueSetter.call(input, msg);
+          input.dispatchEvent(new Event("input", { bubbles: true }));
+        }
+
+        await new Promise((r) => setTimeout(r, 200));
+        input.dispatchEvent(
+          new KeyboardEvent("keydown", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true })
+        );
+        input.dispatchEvent(
+          new KeyboardEvent("keypress", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true })
+        );
+        input.dispatchEvent(
+          new KeyboardEvent("keyup", { key: "Enter", code: "Enter", keyCode: 13, bubbles: true })
+        );
+
+        const form = input.closest("form");
+        if (form) {
+          form.dispatchEvent(new Event("submit", { bubbles: true }));
+        }
+      }
+    }, message);
+  }
+
+  async startAutoNav(): Promise<void> {
+    if (this.autoNavRunning) return;
+    if (!this.page) throw new Error("Bot is not connected");
+    this.autoNavRunning = true;
+    await storage.addLog("Auto-navigation started - bot will explore and chat randomly");
+    this.runAutoNavLoop();
+  }
+
+  async stopAutoNav(): Promise<void> {
+    this.autoNavRunning = false;
+    if (this.autoNavInterval) {
+      clearTimeout(this.autoNavInterval);
+      this.autoNavInterval = null;
+    }
+    await this.stopMovement();
+    await storage.addLog("Auto-navigation stopped");
+  }
+
+  isAutoNavActive(): boolean {
+    return this.autoNavRunning;
+  }
+
+  private async runAutoNavLoop(): Promise<void> {
+    if (!this.autoNavRunning || !this.page) {
+      this.autoNavRunning = false;
+      return;
+    }
+
+    try {
+      const action = Math.random();
+
+      if (action < 0.5) {
+        const directions = ["forward", "left", "right", "backward"];
+        const weights = [0.45, 0.2, 0.2, 0.15];
+        let r = Math.random();
+        let dir = "forward";
+        for (let i = 0; i < weights.length; i++) {
+          r -= weights[i];
+          if (r <= 0) { dir = directions[i]; break; }
+        }
+        const duration = 800 + Math.floor(Math.random() * 2200);
+        await this.move(dir, duration);
+      } else if (action < 0.7) {
+        const turnAmount = (Math.random() - 0.5) * 200;
+        await this.look(turnAmount, (Math.random() - 0.5) * 30);
+      } else if (action < 0.8) {
+        await this.jump();
+        await new Promise(resolve => setTimeout(resolve, 500));
+        await this.move("forward", 1000 + Math.floor(Math.random() * 1500));
+      } else if (action < 0.88) {
+        const msg = AUTO_NAV_MESSAGES[Math.floor(Math.random() * AUTO_NAV_MESSAGES.length)];
+        await this.sendChat(msg);
+      } else {
+        await storage.addLog("Auto-nav: pausing briefly...");
+        await new Promise(resolve => setTimeout(resolve, 1000 + Math.random() * 2000));
+      }
+    } catch (err: any) {
+      await storage.addLog(`Auto-nav action error: ${err.message}`);
+    }
+
+    if (this.autoNavRunning) {
+      const delay = 1500 + Math.floor(Math.random() * 3500);
+      this.autoNavInterval = setTimeout(() => this.runAutoNavLoop(), delay);
+    }
+  }
+
   async stop(preserveError = false): Promise<void> {
+    await this.stopAutoNav().catch(() => {});
     await this.stopMovement().catch(() => {});
     if (this.browser) {
       await this.browser.close().catch(() => {});

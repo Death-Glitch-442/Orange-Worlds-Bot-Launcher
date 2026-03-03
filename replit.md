@@ -21,6 +21,12 @@ A bot control panel for automating navigation in Mozilla Hubs instances. Uses Pu
 - `HUBS_BOT_EMAIL` - Bot login email
 - `HUBS_BOT_PASSWORD` - Bot login password
 
+## Features
+- **Auto-Navigation**: Bot randomly walks around, turns, jumps, and sends chat messages when in auto-nav mode. Starts automatically after entering a room. Toggle on/off from dashboard.
+- **Chat**: Send messages in the Hubs chat from the dashboard, or let auto-nav send random friendly messages.
+- **Manual Controls**: WASD movement, camera look, jump via dashboard buttons or keyboard.
+- **Screenshots**: Capture what the bot sees in real-time.
+
 ## API Endpoints
 - `POST /api/bot/start` - Launch the bot (optional `roomUrl` in body)
 - `POST /api/bot/stop` - Stop the bot
@@ -28,6 +34,9 @@ A bot control panel for automating navigation in Mozilla Hubs instances. Uses Pu
 - `POST /api/bot/jump` - Make bot jump
 - `POST /api/bot/look` - Rotate camera (`deltaX`, `deltaY`)
 - `POST /api/bot/enter-room` - Navigate to a specific room URL
+- `POST /api/bot/auto-nav` - Toggle auto-navigation (`{ enabled: boolean }`)
+- `GET /api/bot/auto-nav` - Get auto-nav status
+- `POST /api/bot/chat` - Send a chat message (`{ message: string }`)
 - `GET /api/bot/screenshot` - Capture what the bot sees
 - `GET /api/bot/status` - Get current bot status
 - `GET /api/bot/logs` - Get activity logs
