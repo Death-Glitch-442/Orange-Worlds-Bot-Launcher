@@ -205,71 +205,85 @@ export class HubsBot {
     await storage.addLog("Timed out waiting for Hubs, proceeding anyway...");
   }
 
+  private async clickButtonByText(textPatterns: string[]): Promise<boolean> {
+    if (!this.page) return false;
+
+    const clicked = await this.page.evaluate((patterns: string[]) => {
+      const buttons = Array.from(document.querySelectorAll("button, a[role='button'], a[href]"));
+      for (const pattern of patterns) {
+        const lowerPattern = pattern.toLowerCase();
+        for (const btn of buttons) {
+          const text = (btn.textContent || "").trim().toLowerCase();
+          if (text.includes(lowerPattern) || text === lowerPattern) {
+            (btn as HTMLElement).click();
+            return text;
+          }
+        }
+      }
+      return null;
+    }, textPatterns);
+
+    if (clicked) {
+      await storage.addLog(`Clicked button: "${clicked}"`);
+      return true;
+    }
+    return false;
+  }
+
   private async tryEnterRoom(): Promise<void> {
     if (!this.page) return;
 
     try {
       await new Promise(resolve => setTimeout(resolve, 3000));
 
-      const pageContent = await this.page.evaluate(() => {
-        const buttons = Array.from(document.querySelectorAll("button"));
-        return buttons.map(b => ({ text: b.textContent?.trim() || "", classes: b.className })).slice(0, 20);
+      const buttonTexts = await this.page.evaluate(() => {
+        const buttons = Array.from(document.querySelectorAll("button, a[role='button']"));
+        return buttons.map(b => (b.textContent || "").trim()).filter(t => t.length > 0 && t.length < 50);
       });
-      await storage.addLog(`Found ${pageContent.length} buttons: ${pageContent.map(b => b.text).filter(Boolean).join(", ")}`);
+      await storage.addLog(`Found buttons: ${buttonTexts.join(" | ")}`);
 
-      for (const selector of [
-        'button[class*="enter"]',
-        'button[class*="Enter"]',
-        'button[data-testid*="enter"]',
-        'a[class*="enter"]',
-      ]) {
-        const el = await this.page.$(selector);
-        if (el) {
-          await el.click();
-          await this.updateStatus("connected", `Clicked: ${selector}`);
+      const enterClicked = await this.clickButtonByText([
+        "enter room", "enter", "join room", "join", "enter world", "go in"
+      ]);
+
+      if (enterClicked) {
+        await this.updateStatus("connected", "Clicked enter/join button!");
+        await new Promise(resolve => setTimeout(resolve, 5000));
+
+        const postClickButtons = await this.page.evaluate(() => {
+          const buttons = Array.from(document.querySelectorAll("button, a[role='button']"));
+          return buttons.map(b => (b.textContent || "").trim()).filter(t => t.length > 0 && t.length < 50);
+        });
+        await storage.addLog(`Post-click buttons: ${postClickButtons.join(" | ")}`);
+
+        const secondClick = await this.clickButtonByText([
+          "accept", "agree", "continue", "connect", "enter", "ok", "got it", "close"
+        ]);
+        if (secondClick) {
+          await storage.addLog("Clicked secondary dialog button");
           await new Promise(resolve => setTimeout(resolve, 3000));
-          break;
+        }
+
+        const thirdClick = await this.clickButtonByText([
+          "enter room", "enter", "join", "connect"
+        ]);
+        if (thirdClick) {
+          await storage.addLog("Clicked tertiary entry button");
+          await new Promise(resolve => setTimeout(resolve, 5000));
         }
       }
 
-      for (const selector of [
-        'button[class*="join"]',
-        'button[class*="Join"]',
-        'button[data-testid*="join"]',
-      ]) {
-        const el = await this.page.$(selector);
-        if (el) {
-          await el.click();
-          await this.updateStatus("connected", `Clicked: ${selector}`);
-          await new Promise(resolve => setTimeout(resolve, 3000));
-          break;
-        }
-      }
-
-      for (const selector of [
-        'button[class*="accept"]',
-        'button[class*="continue"]',
-        'button[class*="agree"]',
-        'button[class*="Connect"]',
-      ]) {
-        const el = await this.page.$(selector);
-        if (el) {
-          await el.click();
-          await this.updateStatus("connected", `Clicked: ${selector}`);
-          await new Promise(resolve => setTimeout(resolve, 2000));
-          break;
-        }
-      }
-
-      const buttons = await this.page.evaluate(() => {
-        const btns = Array.from(document.querySelectorAll("button"));
-        return btns
-          .map(b => b.textContent?.trim() || "")
-          .filter(t => t.length > 0 && t.length < 30);
+      const finalButtons = await this.page.evaluate(() => {
+        const buttons = Array.from(document.querySelectorAll("button, a[role='button']"));
+        return buttons.map(b => (b.textContent || "").trim()).filter(t => t.length > 0 && t.length < 50);
       });
-      if (buttons.length > 0) {
-        await storage.addLog(`Remaining buttons on page: ${buttons.join(", ")}`);
+      if (finalButtons.length > 0) {
+        await storage.addLog(`Final page buttons: ${finalButtons.join(" | ")}`);
       }
+
+      const hasCanvas = await this.page.evaluate(() => !!document.querySelector("canvas"));
+      await storage.addLog(`Canvas present: ${hasCanvas}`);
+
     } catch (err: any) {
       await storage.addLog(`Room entry attempt: ${err.message}`);
     }
