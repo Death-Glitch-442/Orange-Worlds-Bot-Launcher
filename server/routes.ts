@@ -114,8 +114,13 @@ export async function registerRoutes(
   });
 
   app.post("/api/setup/generate", (_req, res) => {
-    const existing = loadGeneratedCredentials() || {};
-    const creds: Record<string, { email: string; password: string }> = { ...existing };
+    const hasAnyEnvSecrets = BOT_CONFIGS.some(({ emailKey, passKey }) =>
+      !!(process.env[emailKey] && process.env[passKey])
+    );
+    const existing = loadGeneratedCredentials();
+    const isRemix = !hasAnyEnvSecrets && existing !== null;
+
+    const creds: Record<string, { email: string; password: string }> = isRemix ? {} : { ...(existing || {}) };
 
     for (const { id } of BOT_CONFIGS) {
       if (!creds[id]) {
