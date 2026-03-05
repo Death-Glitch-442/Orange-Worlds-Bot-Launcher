@@ -331,7 +331,8 @@ export class HubsBot {
       });
 
       this.page.on("pageerror", (err) => {
-        storage.addLog(this.botId, `[browser error] ${err.message.slice(0, 200)}`);
+        const msg = err?.message || String(err) || "unknown error";
+        storage.addLog(this.botId, `[browser error] ${msg.slice(0, 200)}`);
       });
 
       await this.updateStatus("launching", "Browser launched successfully");
@@ -668,19 +669,20 @@ export class HubsBot {
           if (!data.entries || data.entries.length === 0) {
             return { success: false, error: "No avatars found" };
           }
-          const avatars = data.entries.map((e: any) => ({ id: e.id, name: e.name, url: e.url }));
+          const avatars = data.entries.map((e: any) => ({
+            id: e.id,
+            name: e.name,
+            url: e.url,
+            gltfUrl: e.gltfs?.avatar,
+          }));
           const chosen = avatars[Math.floor(Math.random() * avatars.length)];
-
-          const store = JSON.parse(localStorage.getItem("___hubs_store") || "{}");
-          if (!store.profile) store.profile = {};
-          store.profile.avatarId = chosen.url;
-          localStorage.setItem("___hubs_store", JSON.stringify(store));
 
           return {
             success: true,
             avatarId: chosen.id,
             avatarName: chosen.name,
             avatarUrl: chosen.url,
+            gltfUrl: chosen.gltfUrl,
             totalAvatars: avatars.length,
           };
         } catch (err: any) {
@@ -689,15 +691,26 @@ export class HubsBot {
       });
 
       if (avatarResult.success) {
-        await storage.addLog(this.botId, `Avatar set: "${avatarResult.avatarName}" (${avatarResult.avatarId}) from ${avatarResult.totalAvatars} options`);
+        await storage.addLog(this.botId, `Avatar selected: "${avatarResult.avatarName}" (${avatarResult.avatarId}) from ${avatarResult.totalAvatars} options`);
+        await storage.addLog(this.botId, `Avatar gltf URL: ${avatarResult.gltfUrl}`);
 
-        await this.page.evaluate((avatarUrl: string) => {
+        const gltfUrl = avatarResult.gltfUrl;
+        const avatarId = avatarResult.avatarId;
+
+        await this.page.evaluate((gUrl: string) => {
+          try {
+            const store = JSON.parse(localStorage.getItem("___hubs_store") || "{}");
+            if (!store.profile) store.profile = {};
+            store.profile.avatarId = gUrl;
+            localStorage.setItem("___hubs_store", JSON.stringify(store));
+          } catch {}
+
           try {
             if ((window as any).APP && (window as any).APP.store) {
-              (window as any).APP.store.update({ profile: { avatarId: avatarUrl } });
+              (window as any).APP.store.update({ profile: { avatarId: gUrl } });
             }
           } catch {}
-        }, avatarResult.avatarUrl);
+        }, gltfUrl);
 
         await new Promise(resolve => setTimeout(resolve, 2000));
         await this.autoScreenshot("avatar-selected");
