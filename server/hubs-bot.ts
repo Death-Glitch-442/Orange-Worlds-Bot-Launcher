@@ -13,6 +13,13 @@ const CHROMIUM_PATH = "/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.
 const HUBS_BASE_URL = "https://worlds.orangeweb3.com";
 const BEDROCK_API_URL = "https://api.bedrockpassport.com/orange/v1";
 
+const BOT_DISPLAY_NAMES: Record<string, string> = {
+  bot1: "Atlas",
+  bot2: "Nova",
+  bot3: "Echo",
+  bot4: "Spark",
+};
+
 const AUTO_NAV_MESSAGES = [
   "Hello everyone!",
   "Nice place!",
@@ -181,6 +188,7 @@ export class HubsBot {
   constructor(botId: string, credentials: BotCredentials) {
     this.botId = botId;
     this.credentials = credentials;
+    this.botDisplayName = BOT_DISPLAY_NAMES[botId] || botId;
   }
 
   setOtherBotNames(names: string[]) {
@@ -696,29 +704,50 @@ export class HubsBot {
 
         const gltfUrl = avatarResult.gltfUrl;
         const avatarId = avatarResult.avatarId;
+        const customName = BOT_DISPLAY_NAMES[this.botId] || this.botId;
 
-        await this.page.evaluate((gUrl: string) => {
+        await this.page.evaluate((gUrl: string, name: string) => {
           try {
             const store = JSON.parse(localStorage.getItem("___hubs_store") || "{}");
             if (!store.profile) store.profile = {};
             store.profile.avatarId = gUrl;
+            store.profile.displayName = name;
             localStorage.setItem("___hubs_store", JSON.stringify(store));
           } catch {}
 
           try {
             if ((window as any).APP && (window as any).APP.store) {
-              (window as any).APP.store.update({ profile: { avatarId: gUrl } });
+              (window as any).APP.store.update({ profile: { avatarId: gUrl, displayName: name } });
             }
           } catch {}
-        }, gltfUrl);
+        }, gltfUrl, customName);
+
+        this.botDisplayName = customName;
+        await storage.addLog(this.botId, `Display name set to: "${customName}"`);
 
         await new Promise(resolve => setTimeout(resolve, 2000));
         await this.autoScreenshot("avatar-selected");
       } else {
         await storage.addLog(this.botId, `Avatar fetch failed: ${avatarResult.error}, using default`);
+        const customName = BOT_DISPLAY_NAMES[this.botId] || this.botId;
+        await this.page.evaluate((name: string) => {
+          try {
+            const store = JSON.parse(localStorage.getItem("___hubs_store") || "{}");
+            if (!store.profile) store.profile = {};
+            store.profile.displayName = name;
+            localStorage.setItem("___hubs_store", JSON.stringify(store));
+          } catch {}
+          try {
+            if ((window as any).APP && (window as any).APP.store) {
+              (window as any).APP.store.update({ profile: { displayName: name } });
+            }
+          } catch {}
+        }, customName);
+        this.botDisplayName = customName;
+        await storage.addLog(this.botId, `Display name set to: "${customName}"`);
       }
     } catch (err: any) {
-      await storage.addLog(this.botId, `Avatar selection error: ${err.message}`);
+      await storage.addLog(this.botId, `Avatar selection error: ${(err?.message || String(err))}`);
     }
   }
 

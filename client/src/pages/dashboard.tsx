@@ -530,12 +530,17 @@ export default function Dashboard() {
         </Card>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {["bot1", "bot2", "bot3", "bot4"].map((botId, i) => (
+          {[
+            { id: "bot1", name: "Atlas" },
+            { id: "bot2", name: "Nova" },
+            { id: "bot3", name: "Echo" },
+            { id: "bot4", name: "Spark" },
+          ].map(({ id, name }) => (
             <BotPanel
-              key={botId}
-              botId={botId}
-              label={`Bot ${i + 1}`}
-              state={botStates[botId]}
+              key={id}
+              botId={id}
+              label={name}
+              state={botStates[id]}
               roomUrl={roomUrl}
             />
           ))}
