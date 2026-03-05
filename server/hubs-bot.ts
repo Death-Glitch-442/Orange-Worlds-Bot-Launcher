@@ -735,7 +735,7 @@ export class HubsBot {
 
         const gltfUrl = avatarResult.gltfUrl;
         const avatarId = avatarResult.avatarId;
-        const customName = BOT_DISPLAY_NAMES[this.botId] || this.botId;
+        const customName = this.botDisplayName;
 
         await this.page.evaluate((gUrl: string, name: string) => {
           try {
@@ -760,7 +760,7 @@ export class HubsBot {
         await this.autoScreenshot("avatar-selected");
       } else {
         await storage.addLog(this.botId, `Avatar fetch failed: ${avatarResult.error}, using default`);
-        const customName = BOT_DISPLAY_NAMES[this.botId] || this.botId;
+        const customName = this.botDisplayName;
         await this.page.evaluate((name: string) => {
           try {
             const store = JSON.parse(localStorage.getItem("___hubs_store") || "{}");
