@@ -1,21 +1,81 @@
 import type { Express } from "express";
 import { type Server } from "http";
 import { WebSocketServer, WebSocket } from "ws";
+import crypto from "crypto";
+import fs from "fs";
+import path from "path";
 import { storage } from "./storage";
 import { botManager } from "./hubs-bot";
 import { moveCommandSchema, roomCommandSchema } from "@shared/schema";
 
+const BOT_CONFIGS = [
+  { id: "bot1", emailKey: "HUBS_BOT_EMAIL", passKey: "HUBS_BOT_PASSWORD" },
+  { id: "bot2", emailKey: "HUBS_BOT2_EMAIL", passKey: "HUBS_BOT2_PASSWORD" },
+  { id: "bot3", emailKey: "HUBS_BOT3_EMAIL", passKey: "HUBS_BOT3_PASSWORD" },
+  { id: "bot4", emailKey: "HUBS_BOT4_EMAIL", passKey: "HUBS_BOT4_PASSWORD" },
+];
+
+function generatePassword(length = 14): string {
+  const chars = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+  let result = "";
+  const bytes = crypto.randomBytes(length);
+  for (let i = 0; i < length; i++) {
+    result += chars[bytes[i] % chars.length];
+  }
+  return result;
+}
+
+function generateBotEmail(): string {
+  const num = crypto.randomInt(10000, 99999);
+  return `bot${num}@automation.com`;
+}
+
+function getSetupFilePath(): string {
+  return path.join(process.cwd(), ".bot-credentials.json");
+}
+
+function loadGeneratedCredentials(): Record<string, { email: string; password: string }> | null {
+  try {
+    const filePath = getSetupFilePath();
+    if (fs.existsSync(filePath)) {
+      return JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    }
+  } catch {}
+  return null;
+}
+
+function saveGeneratedCredentials(creds: Record<string, { email: string; password: string }>) {
+  fs.writeFileSync(getSetupFilePath(), JSON.stringify(creds, null, 2));
+}
+
+function getBotsSetupStatus(): { configured: boolean; bots: Array<{ id: string; email: string; hasEnvVar: boolean }> } {
+  const bots: Array<{ id: string; email: string; hasEnvVar: boolean }> = [];
+  let allConfigured = true;
+
+  const generated = loadGeneratedCredentials() || {};
+
+  for (const { id, emailKey, passKey } of BOT_CONFIGS) {
+    const envEmail = process.env[emailKey];
+    const envPass = process.env[passKey];
+    const hasEnv = !!(envEmail && envPass);
+
+    if (hasEnv) {
+      bots.push({ id, email: envEmail!, hasEnvVar: true });
+    } else if (generated[id]) {
+      bots.push({ id, email: generated[id].email, hasEnvVar: false });
+      allConfigured = false;
+    } else {
+      allConfigured = false;
+    }
+  }
+
+  return { configured: bots.length > 0 && allConfigured, bots };
+}
+
 function initBots() {
   const apiKey = process.env.BEDROCK_API_KEY || "";
 
-  const botConfigs = [
-    { id: "bot1", emailKey: "HUBS_BOT_EMAIL", passKey: "HUBS_BOT_PASSWORD" },
-    { id: "bot2", emailKey: "HUBS_BOT2_EMAIL", passKey: "HUBS_BOT2_PASSWORD" },
-    { id: "bot3", emailKey: "HUBS_BOT3_EMAIL", passKey: "HUBS_BOT3_PASSWORD" },
-    { id: "bot4", emailKey: "HUBS_BOT4_EMAIL", passKey: "HUBS_BOT4_PASSWORD" },
-  ];
-
-  for (const { id, emailKey, passKey } of botConfigs) {
+  for (const { id, emailKey, passKey } of BOT_CONFIGS) {
     const email = process.env[emailKey];
     const password = process.env[passKey];
     if (email && password) {
@@ -29,6 +89,44 @@ export async function registerRoutes(
   app: Express
 ): Promise<Server> {
   initBots();
+
+  app.get("/api/setup/status", (_req, res) => {
+    const status = getBotsSetupStatus();
+    res.json(status);
+  });
+
+  app.post("/api/setup/generate", (_req, res) => {
+    const existing = loadGeneratedCredentials() || {};
+    const creds: Record<string, { email: string; password: string }> = { ...existing };
+
+    for (const { id } of BOT_CONFIGS) {
+      if (!creds[id]) {
+        creds[id] = {
+          email: generateBotEmail(),
+          password: generatePassword(),
+        };
+      }
+    }
+
+    saveGeneratedCredentials(creds);
+    res.json({
+      message: "Credentials generated. Register each account at https://app.orangeweb3.com",
+      bots: Object.entries(creds).map(([id, c]) => ({ id, email: c.email, password: c.password })),
+    });
+  });
+
+  app.get("/api/setup/credentials", (_req, res) => {
+    const creds = loadGeneratedCredentials();
+    if (!creds) {
+      return res.json({ generated: false, bots: [] });
+    }
+    const bots = Object.entries(creds).map(([id, c]) => {
+      const config = BOT_CONFIGS.find(bc => bc.id === id);
+      const hasEnv = config ? !!(process.env[config.emailKey] && process.env[config.passKey]) : false;
+      return { id, email: c.email, password: c.password, configured: hasEnv };
+    });
+    res.json({ generated: true, bots });
+  });
 
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
 
