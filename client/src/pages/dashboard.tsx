@@ -485,7 +485,7 @@ export default function Dashboard() {
               <Radio className="w-4 h-4 text-white" />
             </div>
             <div>
-              <h1 className="text-lg font-semibold tracking-tight" data-testid="text-title">Hubs Navigator</h1>
+              <h1 className="text-lg font-semibold tracking-tight" data-testid="text-title">Orange Worlds Bots</h1>
               <p className="text-xs text-zinc-500">Multi-Bot Control Panel</p>
             </div>
           </div>

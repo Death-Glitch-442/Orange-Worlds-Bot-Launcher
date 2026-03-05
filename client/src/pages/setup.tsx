@@ -77,7 +77,7 @@ export default function SetupPage({ onComplete }: { onComplete: () => void }) {
             <Rocket className="w-8 h-8 text-white" />
           </div>
           <h1 className="text-3xl font-bold tracking-tight mb-2" data-testid="text-setup-title">
-            Hubs Navigator Setup
+            Orange Worlds Bots Setup
           </h1>
           <p className="text-zinc-400 max-w-lg mx-auto">
             Set up your bot accounts to get started. Each bot needs a registered account on the Orange Web3 platform.

@@ -1,4 +1,4 @@
-# Hubs Navigator Bot
+# Orange Worlds Bots
 
 ## Overview
 A multi-bot control panel for automating navigation in Mozilla Hubs instances. Uses Puppeteer for browser automation and the Bedrock Passport API for authentication. Supports running up to four bot accounts simultaneously that can interact with each other and with users via AI-powered chat.
