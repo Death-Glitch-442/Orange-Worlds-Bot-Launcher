@@ -77,12 +77,15 @@ function BotPanel({ botId, label, state, roomUrl, onNameChange }: {
   const [chatMessage, setChatMessage] = useState("");
   const [screenshot, setScreenshot] = useState<string | null>(state.screenshot);
   const logsEndRef = useRef<HTMLDivElement>(null);
+  const logsContainerRef = useRef<HTMLDivElement>(null);
   const [starting, setStarting] = useState(false);
   const [editingName, setEditingName] = useState(false);
   const [nameInput, setNameInput] = useState(label);
 
   useEffect(() => {
-    logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    if (logsContainerRef.current) {
+      logsContainerRef.current.scrollTop = logsContainerRef.current.scrollHeight;
+    }
   }, [state.logs]);
 
   const isRunning = state.status?.status !== "idle" && state.status?.status !== "error" && state.status?.status !== "disconnected" && state.status !== null;
@@ -384,7 +387,7 @@ function BotPanel({ botId, label, state, roomUrl, onNameChange }: {
           </CardTitle>
         </CardHeader>
         <CardContent className="px-3 pb-3">
-          <div className="h-40 rounded-md bg-zinc-950 border border-zinc-800/30 p-2 overflow-y-auto">
+          <div ref={logsContainerRef} className="h-40 rounded-md bg-zinc-950 border border-zinc-800/30 p-2 overflow-y-auto">
             <div className="space-y-0.5 font-mono text-[10px]">
               {state.logs.length === 0 ? (
                 <p className="text-zinc-600">No activity...</p>
@@ -409,7 +412,6 @@ function BotPanel({ botId, label, state, roomUrl, onNameChange }: {
                   </p>
                 ))
               )}
-              <div ref={logsEndRef} />
             </div>
           </div>
         </CardContent>
