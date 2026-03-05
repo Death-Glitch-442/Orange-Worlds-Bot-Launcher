@@ -257,6 +257,22 @@ export async function registerRoutes(
     }
   });
 
+  app.post("/api/bots/:botId/name", async (req, res) => {
+    try {
+      const bot = botManager.getBot(req.params.botId);
+      if (!bot) return res.status(404).json({ error: "Bot not found" });
+      const { name } = req.body;
+      if (!name || typeof name !== "string" || name.trim().length === 0) {
+        return res.status(400).json({ error: "name is required" });
+      }
+      await bot.setDisplayName(name.trim());
+      botManager.updateBotNames();
+      res.json({ message: "Name updated", name: name.trim() });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
+  });
+
   app.post("/api/bots/:botId/move", async (req, res) => {
     try {
       const bot = botManager.getBot(req.params.botId);

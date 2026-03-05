@@ -28,6 +28,8 @@ import {
   Bot,
   PlayCircle,
   StopCircle,
+  Pencil,
+  Check,
 } from "lucide-react";
 
 function StatusBadge({ status }: { status: BotStatus["status"] }) {
@@ -65,16 +67,19 @@ interface BotState {
   displayName: string;
 }
 
-function BotPanel({ botId, label, state, roomUrl }: {
+function BotPanel({ botId, label, state, roomUrl, onNameChange }: {
   botId: string;
   label: string;
   state: BotState;
   roomUrl: string;
+  onNameChange: (newName: string) => void;
 }) {
   const [chatMessage, setChatMessage] = useState("");
   const [screenshot, setScreenshot] = useState<string | null>(state.screenshot);
   const logsEndRef = useRef<HTMLDivElement>(null);
   const [starting, setStarting] = useState(false);
+  const [editingName, setEditingName] = useState(false);
+  const [nameInput, setNameInput] = useState(label);
 
   useEffect(() => {
     logsEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -157,8 +162,51 @@ function BotPanel({ botId, label, state, roomUrl }: {
             <Bot className="w-3.5 h-3.5 text-white" />
           </div>
           <div>
-            <p className="text-sm font-medium" data-testid={`text-bot-label-${botId}`}>{label}</p>
-            <p className="text-[10px] text-zinc-500">{state.displayName || "Not connected"}</p>
+            {editingName ? (
+              <div className="flex items-center gap-1">
+                <Input
+                  data-testid={`input-bot-name-${botId}`}
+                  value={nameInput}
+                  onChange={(e) => setNameInput(e.target.value)}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter" && nameInput.trim()) {
+                      onNameChange(nameInput.trim());
+                      setEditingName(false);
+                    }
+                    if (e.key === "Escape") {
+                      setNameInput(label);
+                      setEditingName(false);
+                    }
+                  }}
+                  className="h-6 text-sm w-28 bg-zinc-900 border-zinc-700 px-1.5"
+                  autoFocus
+                />
+                <button
+                  data-testid={`button-save-name-${botId}`}
+                  onClick={() => {
+                    if (nameInput.trim()) {
+                      onNameChange(nameInput.trim());
+                      setEditingName(false);
+                    }
+                  }}
+                  className="text-emerald-400 hover:text-emerald-300"
+                >
+                  <Check className="w-3.5 h-3.5" />
+                </button>
+              </div>
+            ) : (
+              <div className="flex items-center gap-1.5">
+                <p className="text-sm font-medium" data-testid={`text-bot-label-${botId}`}>{label}</p>
+                <button
+                  data-testid={`button-edit-name-${botId}`}
+                  onClick={() => { setNameInput(label); setEditingName(true); }}
+                  className="text-zinc-500 hover:text-zinc-300 transition-colors"
+                >
+                  <Pencil className="w-3 h-3" />
+                </button>
+              </div>
+            )}
+            <p className="text-[10px] text-zinc-500">{botId}</p>
           </div>
         </div>
         <div className="flex items-center gap-2">
@@ -370,8 +418,16 @@ function BotPanel({ botId, label, state, roomUrl }: {
   );
 }
 
+const DEFAULT_BOT_NAMES: Record<string, string> = {
+  bot1: "Atlas",
+  bot2: "Nova",
+  bot3: "Echo",
+  bot4: "Spark",
+};
+
 export default function Dashboard() {
   const [roomUrl, setRoomUrl] = useState("https://worlds.orangeweb3.com");
+  const [botNames, setBotNames] = useState<Record<string, string>>(DEFAULT_BOT_NAMES);
   const [botStates, setBotStates] = useState<Record<string, BotState>>({
     bot1: { status: null, logs: [], screenshot: null, autoNav: false, displayName: "" },
     bot2: { status: null, logs: [], screenshot: null, autoNav: false, displayName: "" },
@@ -379,6 +435,15 @@ export default function Dashboard() {
     bot4: { status: null, logs: [], screenshot: null, autoNav: false, displayName: "" },
   });
   const wsRef = useRef<WebSocket | null>(null);
+
+  const handleNameChange = useCallback(async (botId: string, newName: string) => {
+    setBotNames(prev => ({ ...prev, [botId]: newName }));
+    await fetch(`/api/bots/${botId}/name`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ name: newName }),
+    });
+  }, []);
 
   useEffect(() => {
     fetch("/api/bots").then(r => r.json()).then((data: Record<string, any>) => {
@@ -391,6 +456,13 @@ export default function Dashboard() {
             autoNav: info.autoNav,
             displayName: info.displayName || "",
           };
+        }
+        return next;
+      });
+      setBotNames(prev => {
+        const next = { ...prev };
+        for (const [botId, info] of Object.entries(data)) {
+          if (info.displayName) next[botId] = info.displayName;
         }
         return next;
       });
@@ -530,18 +602,14 @@ export default function Dashboard() {
         </Card>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          {[
-            { id: "bot1", name: "Atlas" },
-            { id: "bot2", name: "Nova" },
-            { id: "bot3", name: "Echo" },
-            { id: "bot4", name: "Spark" },
-          ].map(({ id, name }) => (
+          {["bot1", "bot2", "bot3", "bot4"].map((id) => (
             <BotPanel
               key={id}
               botId={id}
-              label={name}
+              label={botNames[id] || id}
               state={botStates[id]}
               roomUrl={roomUrl}
+              onNameChange={(newName) => handleNameChange(id, newName)}
             />
           ))}
         </div>

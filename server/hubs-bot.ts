@@ -199,6 +199,26 @@ export class HubsBot {
     return this.botDisplayName;
   }
 
+  async setDisplayName(name: string): Promise<void> {
+    this.botDisplayName = name;
+    if (this.page) {
+      await this.page.evaluate((n: string) => {
+        try {
+          const store = JSON.parse(localStorage.getItem("___hubs_store") || "{}");
+          if (!store.profile) store.profile = {};
+          store.profile.displayName = n;
+          localStorage.setItem("___hubs_store", JSON.stringify(store));
+        } catch {}
+        try {
+          if ((window as any).APP && (window as any).APP.store) {
+            (window as any).APP.store.update({ profile: { displayName: n } });
+          }
+        } catch {}
+      }, name);
+    }
+    await storage.addLog(this.botId, `Display name changed to: "${name}"`);
+  }
+
   onStatusChange(listener: (status: BotStatus) => void) {
     this.statusListeners.add(listener);
     return () => this.statusListeners.delete(listener);
