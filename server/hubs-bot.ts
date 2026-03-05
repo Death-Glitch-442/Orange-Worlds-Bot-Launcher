@@ -387,50 +387,61 @@ export class HubsBot {
       await this.updateStatus("logging_in", "Page DOM loaded, setting auth token before full load...");
 
       const email = this.credentials.email;
-      await this.page.evaluate((token: string, botEmail: string) => {
+      const displayName = this.botDisplayName;
+      await this.page.evaluate((token: string, botEmail: string, name: string) => {
         try {
           const existingStore = localStorage.getItem("___hubs_store");
           const store = existingStore ? JSON.parse(existingStore) : {};
           store.credentials = { token, email: botEmail };
+          if (!store.profile) store.profile = {};
+          store.profile.displayName = name;
           localStorage.setItem("___hubs_store", JSON.stringify(store));
         } catch (e) {
           localStorage.setItem("___hubs_store", JSON.stringify({
             credentials: { token, email: botEmail },
+            profile: { displayName: name },
           }));
         }
-      }, this.authToken, email);
+      }, this.authToken, email, displayName);
 
-      await this.updateStatus("logging_in", "Auth token set in localStorage, reloading...");
+      await this.updateStatus("logging_in", `Auth token + display name "${displayName}" set in localStorage, reloading...`);
 
       const emailForReload = email;
       const tokenForReload = this.authToken;
-      await this.page.evaluateOnNewDocument((token: string, botEmail: string) => {
+      const nameForReload = displayName;
+      await this.page.evaluateOnNewDocument((token: string, botEmail: string, name: string) => {
         try {
           const existingStore = localStorage.getItem("___hubs_store");
           const store = existingStore ? JSON.parse(existingStore) : {};
           store.credentials = { token, email: botEmail };
+          if (!store.profile) store.profile = {};
+          store.profile.displayName = name;
           localStorage.setItem("___hubs_store", JSON.stringify(store));
         } catch {
           localStorage.setItem("___hubs_store", JSON.stringify({
             credentials: { token, email: botEmail },
+            profile: { displayName: name },
           }));
         }
-      }, tokenForReload, emailForReload);
+      }, tokenForReload, emailForReload, nameForReload);
 
       await this.page.reload({ waitUntil: "domcontentloaded", timeout: 120000 });
 
-      await this.page.evaluate((token: string, botEmail: string) => {
+      await this.page.evaluate((token: string, botEmail: string, name: string) => {
         try {
           const existingStore = localStorage.getItem("___hubs_store");
           const store = existingStore ? JSON.parse(existingStore) : {};
           store.credentials = { token, email: botEmail };
+          if (!store.profile) store.profile = {};
+          store.profile.displayName = name;
           localStorage.setItem("___hubs_store", JSON.stringify(store));
         } catch {
           localStorage.setItem("___hubs_store", JSON.stringify({
             credentials: { token, email: botEmail },
+            profile: { displayName: name },
           }));
         }
-      }, tokenForReload, emailForReload);
+      }, tokenForReload, emailForReload, nameForReload);
 
       const tokenCheck = await this.page.evaluate(() => {
         try {
