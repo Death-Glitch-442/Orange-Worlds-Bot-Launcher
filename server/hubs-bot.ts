@@ -1335,7 +1335,7 @@ export class BotManager {
     const bots = Array.from(this.bots.values()).filter(b => !b.isRunning());
     const startPromises = bots.map((bot, index) => {
       return new Promise<void>(async (resolve) => {
-        await new Promise(r => setTimeout(r, index * 3000));
+        await new Promise(r => setTimeout(r, index * 5000));
         try {
           await bot.start(roomUrl);
         } catch (err) {

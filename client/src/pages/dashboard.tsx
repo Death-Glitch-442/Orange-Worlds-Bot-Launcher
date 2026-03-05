@@ -141,9 +141,13 @@ function BotPanel({ botId, label, state, roomUrl }: {
     });
   };
 
-  const colorScheme = botId === "bot1"
-    ? { accent: "violet", gradient: "from-violet-500 to-fuchsia-600", border: "border-violet-800/40" }
-    : { accent: "cyan", gradient: "from-cyan-500 to-blue-600", border: "border-cyan-800/40" };
+  const colorSchemes: Record<string, { accent: string; gradient: string; border: string }> = {
+    bot1: { accent: "violet", gradient: "from-violet-500 to-fuchsia-600", border: "border-violet-800/40" },
+    bot2: { accent: "cyan", gradient: "from-cyan-500 to-blue-600", border: "border-cyan-800/40" },
+    bot3: { accent: "emerald", gradient: "from-emerald-500 to-teal-600", border: "border-emerald-800/40" },
+    bot4: { accent: "amber", gradient: "from-amber-500 to-orange-600", border: "border-amber-800/40" },
+  };
+  const colorScheme = colorSchemes[botId] || colorSchemes.bot1;
 
   return (
     <div className="space-y-4">
@@ -371,6 +375,8 @@ export default function Dashboard() {
   const [botStates, setBotStates] = useState<Record<string, BotState>>({
     bot1: { status: null, logs: [], screenshot: null, autoNav: false, displayName: "" },
     bot2: { status: null, logs: [], screenshot: null, autoNav: false, displayName: "" },
+    bot3: { status: null, logs: [], screenshot: null, autoNav: false, displayName: "" },
+    bot4: { status: null, logs: [], screenshot: null, autoNav: false, displayName: "" },
   });
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -390,7 +396,7 @@ export default function Dashboard() {
       });
     }).catch(() => {});
 
-    for (const botId of ["bot1", "bot2"]) {
+    for (const botId of ["bot1", "bot2", "bot3", "bot4"]) {
       fetch(`/api/bots/${botId}/logs`).then(r => r.json()).then((logs: string[]) => {
         setBotStates(prev => ({
           ...prev,
@@ -412,7 +418,7 @@ export default function Dashboard() {
           setBotStates(prev => ({
             ...prev,
             [msg.botId]: {
-              ...prev[msg.botId],
+              ...(prev[msg.botId] || { logs: [], screenshot: null, autoNav: false, displayName: "" }),
               status: msg.data,
             },
           }));
@@ -429,7 +435,7 @@ export default function Dashboard() {
 
   useEffect(() => {
     const interval = setInterval(() => {
-      for (const botId of ["bot1", "bot2"]) {
+      for (const botId of ["bot1", "bot2", "bot3", "bot4"]) {
         fetch(`/api/bots/${botId}/logs`).then(r => r.json()).then((logs: string[]) => {
           setBotStates(prev => ({
             ...prev,
@@ -524,18 +530,15 @@ export default function Dashboard() {
         </Card>
 
         <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
-          <BotPanel
-            botId="bot1"
-            label="Bot 1"
-            state={botStates.bot1}
-            roomUrl={roomUrl}
-          />
-          <BotPanel
-            botId="bot2"
-            label="Bot 2"
-            state={botStates.bot2}
-            roomUrl={roomUrl}
-          />
+          {["bot1", "bot2", "bot3", "bot4"].map((botId, i) => (
+            <BotPanel
+              key={botId}
+              botId={botId}
+              label={`Bot ${i + 1}`}
+              state={botStates[botId]}
+              roomUrl={roomUrl}
+            />
+          ))}
         </div>
       </div>
     </div>

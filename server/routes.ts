@@ -8,16 +8,19 @@ import { moveCommandSchema, roomCommandSchema } from "@shared/schema";
 function initBots() {
   const apiKey = process.env.BEDROCK_API_KEY || "";
 
-  const bot1Email = process.env.HUBS_BOT_EMAIL;
-  const bot1Pass = process.env.HUBS_BOT_PASSWORD;
-  if (bot1Email && bot1Pass) {
-    botManager.createBot("bot1", { email: bot1Email, password: bot1Pass, apiKey });
-  }
+  const botConfigs = [
+    { id: "bot1", emailKey: "HUBS_BOT_EMAIL", passKey: "HUBS_BOT_PASSWORD" },
+    { id: "bot2", emailKey: "HUBS_BOT2_EMAIL", passKey: "HUBS_BOT2_PASSWORD" },
+    { id: "bot3", emailKey: "HUBS_BOT3_EMAIL", passKey: "HUBS_BOT3_PASSWORD" },
+    { id: "bot4", emailKey: "HUBS_BOT4_EMAIL", passKey: "HUBS_BOT4_PASSWORD" },
+  ];
 
-  const bot2Email = process.env.HUBS_BOT2_EMAIL;
-  const bot2Pass = process.env.HUBS_BOT2_PASSWORD;
-  if (bot2Email && bot2Pass) {
-    botManager.createBot("bot2", { email: bot2Email, password: bot2Pass, apiKey });
+  for (const { id, emailKey, passKey } of botConfigs) {
+    const email = process.env[emailKey];
+    const password = process.env[passKey];
+    if (email && password) {
+      botManager.createBot(id, { email, password, apiKey });
+    }
   }
 }
 
