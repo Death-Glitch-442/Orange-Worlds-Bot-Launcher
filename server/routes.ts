@@ -90,7 +90,18 @@ function getBotsSetupStatus(): { configured: boolean; bots: Array<{ id: string; 
   return { configured: bots.length > 0 && allConfigured, bots };
 }
 
+function clearStaleCredentialsOnRemix() {
+  const hasAnyEnvSecrets = BOT_CONFIGS.some(({ emailKey, passKey }) =>
+    !!(process.env[emailKey] && process.env[passKey])
+  );
+  const filePath = getSetupFilePath();
+  if (!hasAnyEnvSecrets && fs.existsSync(filePath)) {
+    fs.unlinkSync(filePath);
+  }
+}
+
 function initBots() {
+  clearStaleCredentialsOnRemix();
   const apiKey = getBedrockApiKey();
 
   for (const { id, emailKey, passKey } of BOT_CONFIGS) {
@@ -114,13 +125,8 @@ export async function registerRoutes(
   });
 
   app.post("/api/setup/generate", (_req, res) => {
-    const hasAnyEnvSecrets = BOT_CONFIGS.some(({ emailKey, passKey }) =>
-      !!(process.env[emailKey] && process.env[passKey])
-    );
-    const existing = loadGeneratedCredentials();
-    const isRemix = !hasAnyEnvSecrets && existing !== null;
-
-    const creds: Record<string, { email: string; password: string }> = isRemix ? {} : { ...(existing || {}) };
+    const existing = loadGeneratedCredentials() || {};
+    const creds: Record<string, { email: string; password: string }> = { ...existing };
 
     for (const { id } of BOT_CONFIGS) {
       if (!creds[id]) {
