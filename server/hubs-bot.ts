@@ -653,6 +653,109 @@ export class HubsBot {
     return false;
   }
 
+  private async selectRandomAvatar(): Promise<void> {
+    if (!this.page) return;
+
+    try {
+      await storage.addLog(this.botId, "Looking for avatar selection options...");
+
+      const avatarInfo = await this.page.evaluate(() => {
+        const results: string[] = [];
+
+        const avatarButtons = Array.from(document.querySelectorAll("button")).filter(btn => {
+          const img = btn.querySelector("img");
+          const hasAvatar = btn.className.includes("avatar") ||
+            btn.getAttribute("data-testid")?.includes("avatar") ||
+            btn.closest("[class*='avatar']") !== null ||
+            (img && (img.src.includes("avatar") || img.src.includes("thumbnail")));
+          return hasAvatar;
+        });
+        results.push(`Avatar buttons found: ${avatarButtons.length}`);
+
+        const allImgButtons = Array.from(document.querySelectorAll("button")).filter(btn => {
+          const img = btn.querySelector("img");
+          return img !== null;
+        });
+        results.push(`Buttons with images: ${allImgButtons.length}`);
+
+        const listItems = Array.from(document.querySelectorAll("[class*='avatar'] button, [class*='Avatar'] button, [class*='media'] button, li button"));
+        results.push(`List item buttons: ${listItems.length}`);
+
+        const gridItems = Array.from(document.querySelectorAll("[class*='grid'] button, [class*='Grid'] button"));
+        results.push(`Grid buttons: ${gridItems.length}`);
+
+        const allClickableImages = Array.from(document.querySelectorAll("button img, [role='button'] img, a img")).map(img => {
+          const el = img.closest("button, [role='button'], a");
+          return {
+            src: (img as HTMLImageElement).src?.slice(0, 80),
+            parentTag: el?.tagName,
+            parentClass: el?.className?.toString()?.slice(0, 60),
+          };
+        });
+        results.push(`Clickable images: ${JSON.stringify(allClickableImages.slice(0, 8))}`);
+
+        return results;
+      });
+
+      for (const info of avatarInfo) {
+        await storage.addLog(this.botId, `Avatar scan: ${info}`);
+      }
+
+      const selected = await this.page.evaluate(() => {
+        const candidates: HTMLElement[] = [];
+
+        const avatarBtns = Array.from(document.querySelectorAll("button")).filter(btn => {
+          const img = btn.querySelector("img");
+          if (!img) return false;
+          const isAvatar = btn.className.includes("avatar") ||
+            btn.getAttribute("data-testid")?.includes("avatar") ||
+            btn.closest("[class*='avatar']") !== null ||
+            btn.closest("[class*='Avatar']") !== null ||
+            img.src.includes("avatar") ||
+            img.src.includes("thumbnail") ||
+            img.alt?.toLowerCase().includes("avatar");
+          return isAvatar;
+        });
+
+        if (avatarBtns.length > 0) {
+          candidates.push(...avatarBtns as HTMLElement[]);
+        } else {
+          const imgBtns = Array.from(document.querySelectorAll("button")).filter(btn => {
+            const img = btn.querySelector("img");
+            if (!img) return false;
+            const text = (btn.textContent || "").trim().toLowerCase();
+            return text !== "accept" && text !== "join room" && text !== "join" && text !== "enter room";
+          });
+          candidates.push(...imgBtns as HTMLElement[]);
+        }
+
+        if (candidates.length === 0) return { selected: false, count: 0 };
+
+        const randomIndex = Math.floor(Math.random() * candidates.length);
+        const chosen = candidates[randomIndex];
+        chosen.click();
+
+        const img = chosen.querySelector("img");
+        return {
+          selected: true,
+          count: candidates.length,
+          index: randomIndex,
+          imgSrc: img?.src?.slice(0, 80) || "no-img",
+        };
+      });
+
+      if (selected.selected) {
+        await storage.addLog(this.botId, `Selected avatar ${selected.index + 1} of ${selected.count} (${selected.imgSrc})`);
+        await new Promise(resolve => setTimeout(resolve, 1500));
+        await this.autoScreenshot("avatar-selected");
+      } else {
+        await storage.addLog(this.botId, "No avatar options found, using default");
+      }
+    } catch (err: any) {
+      await storage.addLog(this.botId, `Avatar selection error: ${err.message}`);
+    }
+  }
+
   private async tryEnterRoom(): Promise<void> {
     if (!this.page) return;
 
@@ -692,8 +795,9 @@ export class HubsBot {
       // Check for signin redirect again after Join
       await this.handleSigninRedirect();
 
-      // Step 2: Click "Accept" on the avatar/name configuration screen
+      // Step 2: Select an avatar, then click "Accept" on the avatar/name configuration screen
       await this.waitForButton(["accept"], 15);
+      await this.selectRandomAvatar();
       const clicked2 = await this.clickButtonByText(["accept"]);
       if (clicked2) {
         await this.updateStatus("logging_in", "Accepted avatar settings, waiting for entry screen...");
