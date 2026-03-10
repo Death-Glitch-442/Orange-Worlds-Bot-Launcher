@@ -1,15 +1,19 @@
 import { useState, useEffect } from "react";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   CheckCircle2,
   Circle,
   Copy,
-  ExternalLink,
+  Edit2,
   Loader2,
-  RefreshCw,
   Rocket,
   Shield,
+  UserPlus,
+  X,
+  Save,
+  AlertCircle,
 } from "lucide-react";
 
 interface BotCredential {
@@ -17,14 +21,26 @@ interface BotCredential {
   email: string;
   password: string;
   configured: boolean;
+  registered: boolean;
+}
+
+interface RegistrationResult {
+  id: string;
+  success: boolean;
+  message: string;
 }
 
 export default function SetupPage({ onComplete }: { onComplete: () => void }) {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
+  const [registering, setRegistering] = useState<string | "all" | null>(null);
   const [bots, setBots] = useState<BotCredential[]>([]);
   const [generated, setGenerated] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
+  const [editing, setEditing] = useState<string | null>(null);
+  const [editEmail, setEditEmail] = useState("");
+  const [editPassword, setEditPassword] = useState("");
+  const [regResults, setRegResults] = useState<Record<string, RegistrationResult>>({});
 
   const checkStatus = async () => {
     try {
@@ -46,10 +62,13 @@ export default function SetupPage({ onComplete }: { onComplete: () => void }) {
     setGenerating(true);
     try {
       const res = await fetch("/api/setup/generate", { method: "POST" });
+      if (!res.ok) throw new Error("Failed to generate credentials");
       const data = await res.json();
-      setBots(data.bots.map((b: any) => ({ ...b, configured: false })));
+      setBots(data.bots.map((b: any) => ({ ...b, configured: false, registered: false })));
       setGenerated(true);
-    } catch {}
+    } catch (err: any) {
+      setRegResults({ _global: { id: "_global", success: false, message: err.message || "Failed to generate credentials" } });
+    }
     setGenerating(false);
   };
 
@@ -59,7 +78,93 @@ export default function SetupPage({ onComplete }: { onComplete: () => void }) {
     setTimeout(() => setCopied(null), 2000);
   };
 
+  const startEdit = (bot: BotCredential) => {
+    setEditing(bot.id);
+    setEditEmail(bot.email);
+    setEditPassword(bot.password);
+  };
+
+  const cancelEdit = () => {
+    setEditing(null);
+    setEditEmail("");
+    setEditPassword("");
+  };
+
+  const saveEdit = async (botId: string) => {
+    try {
+      const res = await fetch("/api/setup/update-credential", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ botId, email: editEmail, password: editPassword }),
+      });
+      if (res.ok) {
+        setBots(prev =>
+          prev.map(b =>
+            b.id === botId ? { ...b, email: editEmail, password: editPassword, registered: false } : b
+          )
+        );
+        setRegResults(prev => {
+          const next = { ...prev };
+          delete next[botId];
+          return next;
+        });
+        setEditing(null);
+      } else {
+        const data = await res.json().catch(() => ({}));
+        setRegResults(prev => ({ ...prev, [botId]: { id: botId, success: false, message: data.error || "Failed to save" } }));
+      }
+    } catch (err: any) {
+      setRegResults(prev => ({ ...prev, [botId]: { id: botId, success: false, message: err.message || "Network error" } }));
+    }
+  };
+
+  const handleRegResponse = async (res: Response) => {
+    const data = await res.json();
+    if (data.results) {
+      for (const r of data.results) {
+        setRegResults(prev => ({ ...prev, [r.id]: r }));
+        if (r.success) {
+          setBots(prev => prev.map(b => b.id === r.id ? { ...b, registered: true } : b));
+        }
+      }
+    } else if (data.error) {
+      setRegResults(prev => ({ ...prev, _global: { id: "_global", success: false, message: data.error } }));
+    }
+  };
+
+  const registerBot = async (botId: string) => {
+    setRegistering(botId);
+    try {
+      const res = await fetch("/api/setup/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ botId }),
+      });
+      await handleRegResponse(res);
+    } catch (err: any) {
+      setRegResults(prev => ({ ...prev, [botId]: { id: botId, success: false, message: err.message || "Network error" } }));
+    }
+    setRegistering(null);
+  };
+
+  const registerAll = async () => {
+    setRegistering("all");
+    try {
+      const res = await fetch("/api/setup/register", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({}),
+      });
+      await handleRegResponse(res);
+    } catch (err: any) {
+      setRegResults(prev => ({ ...prev, _global: { id: "_global", success: false, message: err.message || "Network error" } }));
+    }
+    setRegistering(null);
+  };
+
   const allConfigured = bots.length > 0 && bots.every(b => b.configured);
+  const allRegistered = bots.length > 0 && bots.every(b => b.registered);
+  const someRegistered = bots.some(b => b.registered);
 
   if (loading) {
     return (
@@ -115,105 +220,177 @@ export default function SetupPage({ onComplete }: { onComplete: () => void }) {
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
                   <span className="w-6 h-6 rounded-full bg-violet-600 flex items-center justify-center text-xs font-bold">1</span>
-                  Register Each Bot Account
+                  Bot Credentials
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
-                <div className="bg-amber-950/30 border border-amber-800/40 rounded-lg p-4 text-sm">
-                  <p className="text-amber-200 font-medium mb-2">For each bot below:</p>
-                  <ol className="text-amber-300/80 space-y-1 list-decimal list-inside">
-                    <li>Go to <a href="https://app.orangeweb3.com" target="_blank" rel="noopener" className="text-amber-200 underline hover:text-amber-100">app.orangeweb3.com</a></li>
-                    <li>Click <strong>Login</strong></li>
-                    <li>Choose <strong>Email</strong></li>
-                    <li>Click <strong>Register</strong> (create new account)</li>
-                    <li>Use the email and password shown below</li>
-                  </ol>
-                </div>
+                <p className="text-zinc-400 text-sm">
+                  Review or edit the credentials below. You can use the auto-generated ones or replace them with your own.
+                </p>
 
                 <div className="space-y-3">
                   {bots.map((bot, i) => (
                     <div
                       key={bot.id}
                       className={`rounded-lg border p-4 ${
-                        bot.configured
+                        bot.registered
                           ? "bg-emerald-950/20 border-emerald-800/40"
+                          : regResults[bot.id] && !regResults[bot.id].success
+                          ? "bg-red-950/20 border-red-800/40"
                           : "bg-zinc-900/40 border-zinc-700/40"
                       }`}
                       data-testid={`card-bot-credential-${bot.id}`}
                     >
                       <div className="flex items-center justify-between mb-3">
                         <div className="flex items-center gap-2">
-                          {bot.configured ? (
+                          {bot.registered ? (
                             <CheckCircle2 className="w-4 h-4 text-emerald-400" />
                           ) : (
                             <Circle className="w-4 h-4 text-zinc-500" />
                           )}
                           <span className="font-medium text-sm">Bot {i + 1}</span>
+                          {bot.registered && (
+                            <span className="text-xs text-emerald-400 bg-emerald-950/40 px-2 py-0.5 rounded-full">
+                              Registered
+                            </span>
+                          )}
                           {bot.configured && (
                             <span className="text-xs text-emerald-400 bg-emerald-950/40 px-2 py-0.5 rounded-full">
                               Configured
                             </span>
                           )}
                         </div>
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                        <div>
-                          <label className="text-xs text-zinc-500 block mb-1">Email</label>
-                          <div className="flex items-center gap-2">
-                            <code className="text-sm text-zinc-200 bg-zinc-800/60 px-3 py-1.5 rounded flex-1 font-mono" data-testid={`text-email-${bot.id}`}>
-                              {bot.email}
-                            </code>
+                        <div className="flex items-center gap-1">
+                          {editing !== bot.id && (
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="h-8 w-8 p-0 text-zinc-400 hover:text-white"
-                              onClick={() => copyToClipboard(bot.email, `email-${bot.id}`)}
-                              data-testid={`button-copy-email-${bot.id}`}
+                              className="h-7 px-2 text-zinc-400 hover:text-white text-xs"
+                              onClick={() => startEdit(bot)}
+                              data-testid={`button-edit-${bot.id}`}
                             >
-                              {copied === `email-${bot.id}` ? (
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
-                              ) : (
-                                <Copy className="w-3.5 h-3.5" />
-                              )}
+                              <Edit2 className="w-3 h-3 mr-1" />
+                              Edit
                             </Button>
-                          </div>
-                        </div>
-                        <div>
-                          <label className="text-xs text-zinc-500 block mb-1">Password</label>
-                          <div className="flex items-center gap-2">
-                            <code className="text-sm text-zinc-200 bg-zinc-800/60 px-3 py-1.5 rounded flex-1 font-mono" data-testid={`text-password-${bot.id}`}>
-                              {bot.password}
-                            </code>
+                          )}
+                          {!bot.registered && editing !== bot.id && (
                             <Button
                               size="sm"
                               variant="ghost"
-                              className="h-8 w-8 p-0 text-zinc-400 hover:text-white"
-                              onClick={() => copyToClipboard(bot.password, `pass-${bot.id}`)}
-                              data-testid={`button-copy-password-${bot.id}`}
+                              className="h-7 px-2 text-violet-400 hover:text-violet-300 text-xs"
+                              onClick={() => registerBot(bot.id)}
+                              disabled={registering !== null}
+                              data-testid={`button-register-${bot.id}`}
                             >
-                              {copied === `pass-${bot.id}` ? (
-                                <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                              {registering === bot.id ? (
+                                <Loader2 className="w-3 h-3 mr-1 animate-spin" />
                               ) : (
-                                <Copy className="w-3.5 h-3.5" />
+                                <UserPlus className="w-3 h-3 mr-1" />
                               )}
+                              Register
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+
+                      {editing === bot.id ? (
+                        <div className="space-y-3">
+                          <div>
+                            <label className="text-xs text-zinc-500 block mb-1">Email</label>
+                            <Input
+                              value={editEmail}
+                              onChange={(e) => setEditEmail(e.target.value)}
+                              className="bg-zinc-800/60 border-zinc-700 text-sm font-mono"
+                              data-testid={`input-email-${bot.id}`}
+                            />
+                          </div>
+                          <div>
+                            <label className="text-xs text-zinc-500 block mb-1">Password</label>
+                            <Input
+                              value={editPassword}
+                              onChange={(e) => setEditPassword(e.target.value)}
+                              className="bg-zinc-800/60 border-zinc-700 text-sm font-mono"
+                              data-testid={`input-password-${bot.id}`}
+                            />
+                          </div>
+                          <div className="flex gap-2">
+                            <Button
+                              size="sm"
+                              className="bg-violet-600 hover:bg-violet-500 text-white text-xs"
+                              onClick={() => saveEdit(bot.id)}
+                              data-testid={`button-save-${bot.id}`}
+                            >
+                              <Save className="w-3 h-3 mr-1" />
+                              Save
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="ghost"
+                              className="text-zinc-400 hover:text-white text-xs"
+                              onClick={cancelEdit}
+                              data-testid={`button-cancel-edit-${bot.id}`}
+                            >
+                              <X className="w-3 h-3 mr-1" />
+                              Cancel
                             </Button>
                           </div>
                         </div>
-                      </div>
+                      ) : (
+                        <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                          <div>
+                            <label className="text-xs text-zinc-500 block mb-1">Email</label>
+                            <div className="flex items-center gap-2">
+                              <code className="text-sm text-zinc-200 bg-zinc-800/60 px-3 py-1.5 rounded flex-1 font-mono truncate" data-testid={`text-email-${bot.id}`}>
+                                {bot.email}
+                              </code>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 p-0 text-zinc-400 hover:text-white"
+                                onClick={() => copyToClipboard(bot.email, `email-${bot.id}`)}
+                                data-testid={`button-copy-email-${bot.id}`}
+                              >
+                                {copied === `email-${bot.id}` ? (
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                          <div>
+                            <label className="text-xs text-zinc-500 block mb-1">Password</label>
+                            <div className="flex items-center gap-2">
+                              <code className="text-sm text-zinc-200 bg-zinc-800/60 px-3 py-1.5 rounded flex-1 font-mono" data-testid={`text-password-${bot.id}`}>
+                                {bot.password}
+                              </code>
+                              <Button
+                                size="sm"
+                                variant="ghost"
+                                className="h-8 w-8 p-0 text-zinc-400 hover:text-white"
+                                onClick={() => copyToClipboard(bot.password, `pass-${bot.id}`)}
+                                data-testid={`button-copy-password-${bot.id}`}
+                              >
+                                {copied === `pass-${bot.id}` ? (
+                                  <CheckCircle2 className="w-3.5 h-3.5 text-emerald-400" />
+                                ) : (
+                                  <Copy className="w-3.5 h-3.5" />
+                                )}
+                              </Button>
+                            </div>
+                          </div>
+                        </div>
+                      )}
+
+                      {regResults[bot.id] && !regResults[bot.id].success && (
+                        <div className="mt-3 flex items-start gap-2 text-xs text-red-400 bg-red-950/30 border border-red-800/30 rounded p-2">
+                          <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                          <span>{regResults[bot.id].message}</span>
+                        </div>
+                      )}
                     </div>
                   ))}
                 </div>
-
-                <a
-                  href="https://app.orangeweb3.com"
-                  target="_blank"
-                  rel="noopener"
-                  className="inline-flex items-center gap-2 text-sm text-violet-400 hover:text-violet-300 mt-2"
-                  data-testid="link-register"
-                >
-                  <ExternalLink className="w-3.5 h-3.5" />
-                  Open app.orangeweb3.com to register accounts
-                </a>
               </CardContent>
             </Card>
 
@@ -221,6 +398,41 @@ export default function SetupPage({ onComplete }: { onComplete: () => void }) {
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
                   <span className="w-6 h-6 rounded-full bg-violet-600 flex items-center justify-center text-xs font-bold">2</span>
+                  Register Accounts
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <p className="text-zinc-400 text-sm">
+                  Register all bot accounts with the Orange Web3 platform. You can register them all at once, or individually using the buttons above.
+                </p>
+
+                {allRegistered ? (
+                  <div className="bg-emerald-950/30 border border-emerald-800/40 rounded-lg p-4 text-sm flex items-center gap-2">
+                    <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                    <span className="text-emerald-200">All bot accounts have been registered.</span>
+                  </div>
+                ) : (
+                  <Button
+                    data-testid="button-register-all"
+                    onClick={registerAll}
+                    disabled={registering !== null}
+                    className="bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 border-0 text-white"
+                  >
+                    {registering === "all" ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <UserPlus className="w-4 h-4 mr-2" />
+                    )}
+                    Register All Accounts
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+
+            <Card className="bg-[#12121c] border-zinc-800/60">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-full bg-violet-600 flex items-center justify-center text-xs font-bold">3</span>
                   Add Credentials as Secrets
                 </CardTitle>
               </CardHeader>
@@ -276,7 +488,7 @@ export default function SetupPage({ onComplete }: { onComplete: () => void }) {
             <Card className="bg-[#12121c] border-zinc-800/60">
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-violet-600 flex items-center justify-center text-xs font-bold">3</span>
+                  <span className="w-6 h-6 rounded-full bg-violet-600 flex items-center justify-center text-xs font-bold">4</span>
                   Launch the Dashboard
                 </CardTitle>
               </CardHeader>

@@ -52,7 +52,7 @@ function getSetupFilePath(): string {
   return path.join(process.cwd(), ".bot-credentials.json");
 }
 
-function loadGeneratedCredentials(): Record<string, { email: string; password: string }> | null {
+function loadGeneratedCredentials(): Record<string, { email: string; password: string; registered?: boolean }> | null {
   try {
     const filePath = getSetupFilePath();
     if (fs.existsSync(filePath)) {
@@ -62,7 +62,7 @@ function loadGeneratedCredentials(): Record<string, { email: string; password: s
   return null;
 }
 
-function saveGeneratedCredentials(creds: Record<string, { email: string; password: string }>) {
+function saveGeneratedCredentials(creds: Record<string, { email: string; password: string; registered?: boolean }>) {
   fs.writeFileSync(getSetupFilePath(), JSON.stringify(creds, null, 2));
 }
 
@@ -152,9 +152,81 @@ export async function registerRoutes(
     const bots = Object.entries(creds).map(([id, c]) => {
       const config = BOT_CONFIGS.find(bc => bc.id === id);
       const hasEnv = config ? !!(process.env[config.emailKey] && process.env[config.passKey]) : false;
-      return { id, email: c.email, password: c.password, configured: hasEnv };
+      return { id, email: c.email, password: c.password, configured: hasEnv, registered: !!c.registered };
     });
     res.json({ generated: true, bots });
+  });
+
+  app.post("/api/setup/update-credential", (req, res) => {
+    const { botId, email, password } = req.body;
+    if (!botId || !email || !password) {
+      return res.status(400).json({ error: "botId, email, and password are required" });
+    }
+    const config = BOT_CONFIGS.find(bc => bc.id === botId);
+    if (!config) {
+      return res.status(404).json({ error: "Bot not found" });
+    }
+    const creds = loadGeneratedCredentials() || {};
+    creds[botId] = { email, password };
+    saveGeneratedCredentials(creds);
+    res.json({ message: "Credential updated", botId, email });
+  });
+
+  app.post("/api/setup/register", async (req, res) => {
+    const { botId } = req.body;
+    const creds = loadGeneratedCredentials();
+    if (!creds) {
+      return res.status(400).json({ error: "No credentials generated yet" });
+    }
+
+    const botsToRegister = botId
+      ? [{ id: botId, ...creds[botId] }].filter(b => b.email)
+      : Object.entries(creds).filter(([_, c]) => !c.registered).map(([id, c]) => ({ id, ...c }));
+
+    if (botsToRegister.length === 0) {
+      return res.status(400).json({ error: "No bots to register" });
+    }
+
+    const apiKey = getBedrockApiKey();
+    if (!apiKey) {
+      return res.status(500).json({ error: "Bedrock API key not available" });
+    }
+
+    const results: Array<{ id: string; success: boolean; message: string }> = [];
+
+    for (const bot of botsToRegister) {
+      try {
+        const response = await fetch("https://api.bedrockpassport.com/api/v1/auth/email/register", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            "Ocp-Apim-Subscription-Key": apiKey,
+          },
+          body: JSON.stringify({
+            email: bot.email,
+            password: bot.password,
+            passwordConfirm: bot.password,
+          }),
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (response.ok) {
+          if (creds[bot.id]) {
+            creds[bot.id].registered = true;
+          }
+          results.push({ id: bot.id, success: true, message: "Registered successfully" });
+        } else {
+          const errMsg = data?.message || data?.error || `Registration failed (${response.status})`;
+          results.push({ id: bot.id, success: false, message: errMsg });
+        }
+      } catch (err: any) {
+        results.push({ id: bot.id, success: false, message: err.message || "Network error" });
+      }
+    }
+
+    saveGeneratedCredentials(creds);
+    res.json({ results });
   });
 
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
