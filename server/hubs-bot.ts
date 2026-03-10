@@ -1393,18 +1393,28 @@ export class HubsBot {
   }
 
   private async logoutFromBedrock(): Promise<void> {
-    if (!this.authToken) return;
+    if (!this.authToken) {
+      await storage.addLog(this.botId, "Skipping logout: no auth token");
+      return;
+    }
     try {
       const { apiKey } = this.credentials;
-      await fetch("https://api.bedrockpassport.com/api/v1/auth/logout", {
+      await storage.addLog(this.botId, `Attempting Bedrock logout (token length: ${this.authToken.length})...`);
+      const response = await fetch("https://api.bedrockpassport.com/api/v1/auth/logout", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
           "Ocp-Apim-Subscription-Key": apiKey,
+          "x-api-key": apiKey,
           "Authorization": `Bearer ${this.authToken}`,
         },
       });
-      await storage.addLog(this.botId, "Logged out from Bedrock session");
+      const responseText = await response.text().catch(() => "");
+      if (response.ok) {
+        await storage.addLog(this.botId, `Logged out from Bedrock session (${response.status})`);
+      } else {
+        await storage.addLog(this.botId, `Bedrock logout returned ${response.status}: ${responseText.slice(0, 200)}`);
+      }
     } catch (err: any) {
       await storage.addLog(this.botId, `Bedrock logout error: ${err.message}`);
     }
