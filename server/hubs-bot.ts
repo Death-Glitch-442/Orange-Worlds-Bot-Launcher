@@ -1385,6 +1385,24 @@ export class HubsBot {
     }
   }
 
+  private async logoutFromBedrock(): Promise<void> {
+    if (!this.authToken) return;
+    try {
+      const { apiKey } = this.credentials;
+      await fetch("https://api.bedrockpassport.com/api/v1/auth/logout", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Ocp-Apim-Subscription-Key": apiKey,
+          "Authorization": `Bearer ${this.authToken}`,
+        },
+      });
+      await storage.addLog(this.botId, "Logged out from Bedrock session");
+    } catch (err: any) {
+      await storage.addLog(this.botId, `Bedrock logout error: ${err.message}`);
+    }
+  }
+
   async stop(preserveError = false): Promise<void> {
     await this.stopAutoNav().catch(() => {});
     await this.stopChatMonitor().catch(() => {});
@@ -1410,6 +1428,7 @@ export class HubsBot {
         await new Promise(r => setTimeout(r, 1000));
       } catch {}
     }
+    await this.logoutFromBedrock();
     if (this.browser) {
       await this.browser.close().catch(() => {});
       this.browser = null;
@@ -1489,11 +1508,14 @@ export class BotManager {
   }
 
   async stopAll(): Promise<void> {
-    for (const bot of this.bots.values()) {
-      if (bot.isRunning()) {
-        await bot.stop();
-      }
-    }
+    const stopPromises = Array.from(this.bots.values())
+      .filter(bot => bot.isRunning())
+      .map(bot =>
+        bot.stop().catch(err => {
+          console.error(`Failed to stop ${bot.botId}:`, err);
+        })
+      );
+    await Promise.all(stopPromises);
   }
 }
 
