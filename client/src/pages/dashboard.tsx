@@ -525,6 +525,7 @@ export default function Dashboard() {
             if (next[botId]) {
               next[botId] = {
                 ...next[botId],
+                status: info.status || next[botId].status,
                 autoNav: info.autoNav,
                 displayName: info.displayName || "",
               };
