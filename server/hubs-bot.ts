@@ -1403,7 +1403,6 @@ export class HubsBot {
       const response = await fetch("https://api.bedrockpassport.com/api/v1/auth/logout", {
         method: "POST",
         headers: {
-          "Content-Type": "application/json",
           "Ocp-Apim-Subscription-Key": apiKey,
           "x-api-key": apiKey,
           "Authorization": `Bearer ${this.authToken}`,
