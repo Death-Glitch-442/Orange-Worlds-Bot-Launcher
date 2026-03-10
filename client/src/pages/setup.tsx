@@ -5,11 +5,13 @@ import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import {
   CheckCircle2,
   Circle,
+  ClipboardList,
   Copy,
   Edit2,
   Loader2,
   Rocket,
   Shield,
+  ShieldAlert,
   UserPlus,
   X,
   Save,
@@ -161,6 +163,27 @@ export default function SetupPage({ onComplete }: { onComplete: () => void }) {
       setRegResults(prev => ({ ...prev, _global: { id: "_global", success: false, message: err.message || "Network error" } }));
     }
     setRegistering(null);
+  };
+
+  const copyAllCredentials = () => {
+    const BOT_KEYS = [
+      { emailKey: "HUBS_BOT_EMAIL", passKey: "HUBS_BOT_PASSWORD" },
+      { emailKey: "HUBS_BOT2_EMAIL", passKey: "HUBS_BOT2_PASSWORD" },
+      { emailKey: "HUBS_BOT3_EMAIL", passKey: "HUBS_BOT3_PASSWORD" },
+      { emailKey: "HUBS_BOT4_EMAIL", passKey: "HUBS_BOT4_PASSWORD" },
+    ];
+    const lines = bots.map((bot, i) => {
+      const keys = BOT_KEYS[i];
+      return [
+        `Bot ${i + 1}`,
+        `  ${keys.emailKey} = ${bot.email}`,
+        `  ${keys.passKey} = ${bot.password}`,
+      ].join("\n");
+    });
+    const text = "=== Orange Worlds Bot Credentials ===\n\n" + lines.join("\n\n") + "\n";
+    navigator.clipboard.writeText(text);
+    setCopied("all-credentials");
+    setTimeout(() => setCopied(null), 3000);
   };
 
   const activateCredentials = async () => {
@@ -455,10 +478,77 @@ export default function SetupPage({ onComplete }: { onComplete: () => void }) {
               </CardContent>
             </Card>
 
+            <Card className="bg-[#12121c] border-2 border-amber-600/60 ring-1 ring-amber-500/20">
+              <CardHeader>
+                <CardTitle className="text-lg flex items-center gap-2">
+                  <span className="w-6 h-6 rounded-full bg-amber-600 flex items-center justify-center text-xs font-bold">3</span>
+                  <ShieldAlert className="w-5 h-5 text-amber-400" />
+                  Save Your Credentials
+                </CardTitle>
+              </CardHeader>
+              <CardContent className="space-y-4">
+                <div className="bg-amber-950/40 border border-amber-800/50 rounded-lg p-4 text-sm">
+                  <p className="text-amber-200 font-semibold mb-2">Important: Save these credentials now!</p>
+                  <p className="text-amber-300/80 text-xs">
+                    Copy all bot emails and passwords below and save them somewhere safe (e.g. a document or password manager).
+                    You will need these if you ever need to reconfigure or move your bots.
+                  </p>
+                </div>
+
+                <div className="bg-zinc-900/60 rounded-lg p-4 font-mono text-xs space-y-3 text-zinc-300">
+                  {bots.map((bot, i) => {
+                    const config = [
+                      { emailKey: "HUBS_BOT_EMAIL", passKey: "HUBS_BOT_PASSWORD" },
+                      { emailKey: "HUBS_BOT2_EMAIL", passKey: "HUBS_BOT2_PASSWORD" },
+                      { emailKey: "HUBS_BOT3_EMAIL", passKey: "HUBS_BOT3_PASSWORD" },
+                      { emailKey: "HUBS_BOT4_EMAIL", passKey: "HUBS_BOT4_PASSWORD" },
+                    ][i];
+                    return (
+                      <div key={bot.id} className="space-y-0.5">
+                        <div className="text-zinc-500 text-[10px] uppercase tracking-wider mb-1">Bot {i + 1}</div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-zinc-500 w-40 shrink-0">{config.emailKey}</span>
+                          <span className="text-zinc-600">=</span>
+                          <span className="text-violet-300">{bot.email}</span>
+                        </div>
+                        <div className="flex items-center gap-2">
+                          <span className="text-zinc-500 w-40 shrink-0">{config.passKey}</span>
+                          <span className="text-zinc-600">=</span>
+                          <span className="text-violet-300">{bot.password}</span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                </div>
+
+                <Button
+                  data-testid="button-copy-all-credentials"
+                  onClick={copyAllCredentials}
+                  className={`w-full ${
+                    copied === "all-credentials"
+                      ? "bg-emerald-600 hover:bg-emerald-500"
+                      : "bg-amber-600 hover:bg-amber-500"
+                  } border-0 text-white font-medium`}
+                >
+                  {copied === "all-credentials" ? (
+                    <>
+                      <CheckCircle2 className="w-4 h-4 mr-2" />
+                      Copied to Clipboard!
+                    </>
+                  ) : (
+                    <>
+                      <ClipboardList className="w-4 h-4 mr-2" />
+                      Copy All Credentials
+                    </>
+                  )}
+                </Button>
+              </CardContent>
+            </Card>
+
             <Card className="bg-[#12121c] border-zinc-800/60">
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-violet-600 flex items-center justify-center text-xs font-bold">3</span>
+                  <span className="w-6 h-6 rounded-full bg-violet-600 flex items-center justify-center text-xs font-bold">4</span>
                   Activate & Launch
                 </CardTitle>
               </CardHeader>
