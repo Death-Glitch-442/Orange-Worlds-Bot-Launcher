@@ -34,6 +34,7 @@ export default function SetupPage({ onComplete }: { onComplete: () => void }) {
   const [loading, setLoading] = useState(true);
   const [generating, setGenerating] = useState(false);
   const [registering, setRegistering] = useState<string | "all" | null>(null);
+  const [activating, setActivating] = useState(false);
   const [bots, setBots] = useState<BotCredential[]>([]);
   const [generated, setGenerated] = useState(false);
   const [copied, setCopied] = useState<string | null>(null);
@@ -160,6 +161,31 @@ export default function SetupPage({ onComplete }: { onComplete: () => void }) {
       setRegResults(prev => ({ ...prev, _global: { id: "_global", success: false, message: err.message || "Network error" } }));
     }
     setRegistering(null);
+  };
+
+  const activateCredentials = async () => {
+    setActivating(true);
+    try {
+      const res = await fetch("/api/setup/activate", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+      });
+      const data = await res.json();
+      if (res.ok && data.activated?.length > 0) {
+        onComplete();
+      } else {
+        setRegResults(prev => ({
+          ...prev,
+          _global: { id: "_global", success: false, message: data.error || "Failed to activate credentials" },
+        }));
+      }
+    } catch (err: any) {
+      setRegResults(prev => ({
+        ...prev,
+        _global: { id: "_global", success: false, message: err.message || "Network error" },
+      }));
+    }
+    setActivating(false);
   };
 
   const allConfigured = bots.length > 0 && bots.every(b => b.configured);
@@ -433,77 +459,46 @@ export default function SetupPage({ onComplete }: { onComplete: () => void }) {
               <CardHeader>
                 <CardTitle className="text-lg flex items-center gap-2">
                   <span className="w-6 h-6 rounded-full bg-violet-600 flex items-center justify-center text-xs font-bold">3</span>
-                  Add Credentials as Secrets
+                  Activate & Launch
                 </CardTitle>
               </CardHeader>
               <CardContent className="space-y-4">
                 <p className="text-zinc-400 text-sm">
-                  After registering all accounts, add each bot's credentials as Replit Secrets.
-                  Go to the <strong>Secrets</strong> tab in your Replit project and add these:
+                  {someRegistered
+                    ? "Your accounts are registered. Click below to activate the credentials and launch the dashboard."
+                    : "Once your accounts are registered, click below to activate the credentials and launch the dashboard."}
                 </p>
-                <div className="bg-zinc-900/60 rounded-lg p-4 font-mono text-xs space-y-1 text-zinc-300">
-                  {bots.map((bot, i) => {
-                    const config = [
-                      { id: "bot1", emailKey: "HUBS_BOT_EMAIL", passKey: "HUBS_BOT_PASSWORD" },
-                      { id: "bot2", emailKey: "HUBS_BOT2_EMAIL", passKey: "HUBS_BOT2_PASSWORD" },
-                      { id: "bot3", emailKey: "HUBS_BOT3_EMAIL", passKey: "HUBS_BOT3_PASSWORD" },
-                      { id: "bot4", emailKey: "HUBS_BOT4_EMAIL", passKey: "HUBS_BOT4_PASSWORD" },
-                    ][i];
-                    return (
-                      <div key={bot.id}>
-                        <div className="flex items-center gap-2">
-                          <span className="text-zinc-500">{config.emailKey}</span>
-                          <span className="text-zinc-600">=</span>
-                          <span className="text-violet-300">{bot.email}</span>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-5 w-5 p-0 text-zinc-500 hover:text-white"
-                            onClick={() => copyToClipboard(`${bot.email}`, `env-email-${bot.id}`)}
-                          >
-                            <Copy className="w-3 h-3" />
-                          </Button>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className="text-zinc-500">{config.passKey}</span>
-                          <span className="text-zinc-600">=</span>
-                          <span className="text-violet-300">{bot.password}</span>
-                          <Button
-                            size="sm"
-                            variant="ghost"
-                            className="h-5 w-5 p-0 text-zinc-500 hover:text-white"
-                            onClick={() => copyToClipboard(`${bot.password}`, `env-pass-${bot.id}`)}
-                          >
-                            <Copy className="w-3 h-3" />
-                          </Button>
-                        </div>
-                        {i < bots.length - 1 && <div className="h-1" />}
-                      </div>
-                    );
-                  })}
-                </div>
-              </CardContent>
-            </Card>
 
-            <Card className="bg-[#12121c] border-zinc-800/60">
-              <CardHeader>
-                <CardTitle className="text-lg flex items-center gap-2">
-                  <span className="w-6 h-6 rounded-full bg-violet-600 flex items-center justify-center text-xs font-bold">4</span>
-                  Launch the Dashboard
-                </CardTitle>
-              </CardHeader>
-              <CardContent>
-                <p className="text-zinc-400 text-sm mb-4">
-                  Once you've registered all accounts and added the secrets, click below to continue to the bot control dashboard.
-                </p>
-                <Button
-                  data-testid="button-continue-dashboard"
-                  onClick={onComplete}
-                  className="bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 border-0 text-white"
-                >
-                  <Rocket className="w-4 h-4 mr-2" />
-                  Continue to Dashboard
-                </Button>
+                {regResults._global && !regResults._global.success && (
+                  <div className="flex items-start gap-2 text-xs text-red-400 bg-red-950/30 border border-red-800/30 rounded p-2">
+                    <AlertCircle className="w-3.5 h-3.5 mt-0.5 shrink-0" />
+                    <span>{regResults._global.message}</span>
+                  </div>
+                )}
+
+                <div className="flex gap-3">
+                  <Button
+                    data-testid="button-activate-dashboard"
+                    onClick={activateCredentials}
+                    disabled={activating}
+                    className="bg-gradient-to-r from-violet-600 to-fuchsia-600 hover:from-violet-500 hover:to-fuchsia-500 border-0 text-white"
+                  >
+                    {activating ? (
+                      <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+                    ) : (
+                      <Rocket className="w-4 h-4 mr-2" />
+                    )}
+                    Activate & Launch Dashboard
+                  </Button>
+                  <Button
+                    data-testid="button-continue-dashboard"
+                    onClick={onComplete}
+                    variant="outline"
+                    className="border-zinc-700 text-zinc-300 hover:bg-zinc-800"
+                  >
+                    Skip to Dashboard
+                  </Button>
+                </div>
               </CardContent>
             </Card>
           </div>

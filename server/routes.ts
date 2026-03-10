@@ -103,10 +103,22 @@ function clearStaleCredentialsOnRemix() {
 function initBots() {
   clearStaleCredentialsOnRemix();
   const apiKey = getBedrockApiKey();
+  const generated = loadGeneratedCredentials() || {};
 
   for (const { id, emailKey, passKey } of BOT_CONFIGS) {
-    const email = process.env[emailKey];
-    const password = process.env[passKey];
+    let email = process.env[emailKey];
+    let password = process.env[passKey];
+
+    if (!email || !password) {
+      const cred = generated[id];
+      if (cred && cred.registered && cred.email && cred.password) {
+        email = cred.email;
+        password = cred.password;
+        process.env[emailKey] = email;
+        process.env[passKey] = password;
+      }
+    }
+
     if (email && password) {
       botManager.createBot(id, { email, password, apiKey });
     }
@@ -227,6 +239,31 @@ export async function registerRoutes(
 
     saveGeneratedCredentials(creds);
     res.json({ results });
+  });
+
+  app.post("/api/setup/activate", (_req, res) => {
+    const creds = loadGeneratedCredentials();
+    if (!creds) {
+      return res.status(400).json({ error: "No credentials found" });
+    }
+
+    const apiKey = getBedrockApiKey();
+    const activated: string[] = [];
+
+    for (const { id, emailKey, passKey } of BOT_CONFIGS) {
+      const botCreds = creds[id];
+      if (botCreds && botCreds.email && botCreds.password) {
+        process.env[emailKey] = botCreds.email;
+        process.env[passKey] = botCreds.password;
+
+        if (!botManager.getBot(id)) {
+          botManager.createBot(id, { email: botCreds.email, password: botCreds.password, apiKey });
+        }
+        activated.push(id);
+      }
+    }
+
+    res.json({ message: "Credentials activated", activated });
   });
 
   const wss = new WebSocketServer({ server: httpServer, path: "/ws" });
