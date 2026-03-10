@@ -185,10 +185,16 @@ export class HubsBot {
   private otherBotNames: string[] = [];
   private conversationHistory: { role: string; content: string }[] = [];
 
+  private stopping: boolean = false;
+
   constructor(botId: string, credentials: BotCredentials) {
     this.botId = botId;
     this.credentials = credentials;
     this.botDisplayName = BOT_DISPLAY_NAMES[botId] || botId;
+  }
+
+  private isPageAlive(): boolean {
+    return !!(this.page && this.browser && !this.stopping);
   }
 
   setOtherBotNames(names: string[]) {
@@ -914,9 +920,7 @@ export class HubsBot {
   }
 
   async move(direction: string, duration: number = 500): Promise<void> {
-    if (!this.page) {
-      throw new Error("Browser not launched");
-    }
+    if (!this.isPageAlive()) return;
 
     const keyMap: Record<string, string> = {
       forward: "w",
@@ -935,21 +939,22 @@ export class HubsBot {
     }
 
     await storage.addLog(this.botId, `Moving ${direction} for ${duration}ms`);
-    await this.page.keyboard.down(key);
+    await this.page!.keyboard.down(key);
     await new Promise(resolve => setTimeout(resolve, duration));
-    await this.page.keyboard.up(key);
+    if (!this.isPageAlive()) return;
+    await this.page!.keyboard.up(key);
   }
 
   async jump(): Promise<void> {
-    if (!this.page) throw new Error("Browser not launched");
+    if (!this.isPageAlive()) return;
     await storage.addLog(this.botId, "Jumping!");
-    await this.page.keyboard.press("Space");
+    await this.page!.keyboard.press("Space");
   }
 
   async look(deltaX: number, deltaY: number): Promise<void> {
-    if (!this.page) throw new Error("Browser not launched");
+    if (!this.isPageAlive()) return;
 
-    await this.page.evaluate((dx: number, dy: number) => {
+    await this.page!.evaluate((dx: number, dy: number) => {
       const canvas = document.querySelector("canvas");
       if (canvas) {
         canvas.dispatchEvent(new PointerEvent("pointerdown", { button: 2, clientX: 640, clientY: 360 }));
@@ -961,11 +966,13 @@ export class HubsBot {
   }
 
   private async stopMovement(): Promise<void> {
-    if (!this.page) return;
-    for (const key of ["w", "a", "s", "d"]) {
-      await this.page.keyboard.up(key);
-    }
-    await storage.addLog(this.botId, "Stopped all movement");
+    if (!this.isPageAlive()) return;
+    try {
+      for (const key of ["w", "a", "s", "d"]) {
+        await this.page!.keyboard.up(key);
+      }
+      await storage.addLog(this.botId, "Stopped all movement");
+    } catch {}
   }
 
   async takeScreenshot(): Promise<string | null> {
@@ -990,7 +997,7 @@ export class HubsBot {
   }
 
   async sendChat(message: string): Promise<void> {
-    if (!this.page) throw new Error("Browser not launched");
+    if (!this.isPageAlive()) return;
 
     await storage.addLog(this.botId, `Sending chat: "${message}"`);
 
@@ -1263,7 +1270,7 @@ export class HubsBot {
   }
 
   private async runChatMonitorLoop(): Promise<void> {
-    if (!this.autoNavRunning || !this.page) return;
+    if (!this.autoNavRunning || !this.isPageAlive()) return;
 
     try {
       const messages = await this.readChatMessages();
@@ -1342,7 +1349,7 @@ export class HubsBot {
   }
 
   private async runAutoNavLoop(): Promise<void> {
-    if (!this.autoNavRunning || !this.page) {
+    if (!this.autoNavRunning || !this.isPageAlive()) {
       this.autoNavRunning = false;
       return;
     }
@@ -1379,7 +1386,7 @@ export class HubsBot {
       await storage.addLog(this.botId, `Auto-nav action error: ${err.message}`);
     }
 
-    if (this.autoNavRunning) {
+    if (this.autoNavRunning && this.isPageAlive()) {
       const delay = 2000 + Math.floor(Math.random() * 3000);
       this.autoNavInterval = setTimeout(() => this.runAutoNavLoop(), delay);
     }
@@ -1404,8 +1411,16 @@ export class HubsBot {
   }
 
   async stop(preserveError = false): Promise<void> {
-    await this.stopAutoNav().catch(() => {});
-    await this.stopChatMonitor().catch(() => {});
+    this.stopping = true;
+    this.autoNavRunning = false;
+    if (this.autoNavInterval) {
+      clearTimeout(this.autoNavInterval);
+      this.autoNavInterval = null;
+    }
+    if (this.chatMonitorInterval) {
+      clearTimeout(this.chatMonitorInterval);
+      this.chatMonitorInterval = null;
+    }
     await this.stopMovement().catch(() => {});
     this.seenChatMessages.clear();
     this.conversationHistory = [];
@@ -1436,6 +1451,7 @@ export class HubsBot {
     }
     this.authToken = null;
     this.starting = false;
+    this.stopping = false;
     if (!preserveError) {
       await this.updateStatus("idle", "Bot stopped");
     }
