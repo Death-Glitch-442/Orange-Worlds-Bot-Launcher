@@ -1,12 +1,12 @@
 Orange Worlds Bots
 Overview
-A multi-bot control panel for automating navigation in Mozilla Hubs instances. Uses Puppeteer for browser automation and the Bedrock Passport API for authentication. Supports running up to four bot accounts simultaneously that can interact with each other and with users via AI-powered chat.
+A multi-bot control panel for automating navigation in Orange Worlds instance. Uses Puppeteer for browser automation and the Bedrock Passport API for authentication. Supports running up to four bot accounts simultaneously that can interact with each other and with users via AI-powered chat.
 
 Architecture
 Frontend: React + Vite dashboard with real-time WebSocket status updates, 4-bot panels
 Backend: Express server with Puppeteer-based bot engine (BotManager pattern)
 Auth: Bedrock Passport API (https://api.bedrockpassport.com/orange/v1/auth/email/login) — accounts auto-create on first login
-Target: Mozilla Hubs instance at https://worlds.orangeweb3.com
+Target: Orange Worlds instance at https://worlds.orangeweb3.com
 Key Files
 server/hubs-bot.ts - Bot engine (HubsBot class + BotManager), Puppeteer automation, auth, movement, chat
 server/routes.ts - API routes for multi-bot control
@@ -27,12 +27,12 @@ Bot-to-Bot Chat: Bots detect each other's messages and respond with rate limitin
 AI Chat Responses: Uses OpenAI (via Replit AI Integrations) for contextual, conversation-aware replies
 Conversation History: Each bot maintains a rolling 20-message history for context in AI responses
 Entrance Greetings: Bots send a greeting immediately upon entering the room
-Chat via Hubs API: Messages sent directly via window.APP.hubChannel.sendMessage() — no UI interaction needed
+Chat via Orange Worlds API: Messages sent directly via window.APP.hubChannel.sendMessage() — no UI interaction needed
 Auto-Navigation: Random walking, turning, jumping, and chat; starts after room entry
 Manual Controls: Per-bot WASD movement, camera look, jump via dashboard
 Screenshots: Capture what each bot sees independently
 Start/Stop All: Global controls to launch or stop all bots at once
-Proper Room Exit: Bots click "Leave" in Hubs before closing browser to avoid ghost avatars
+Proper Room Exit: Bots click "Leave" in Worlds before closing browser to avoid ghost avatars
 API Endpoints
 Multi-Bot (primary)
 GET /api/bots - Get all bot statuses
