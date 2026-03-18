@@ -56,14 +56,17 @@ function loadGeneratedCredentials(): Record<string, { email: string; password: s
   try {
     const filePath = getSetupFilePath();
     if (fs.existsSync(filePath)) {
-      return JSON.parse(fs.readFileSync(filePath, "utf-8"));
+      const raw = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+      const { _replId, ...creds } = raw;
+      return creds;
     }
   } catch {}
   return null;
 }
 
 function saveGeneratedCredentials(creds: Record<string, { email: string; password: string; registered?: boolean }>) {
-  fs.writeFileSync(getSetupFilePath(), JSON.stringify(creds, null, 2));
+  const data = { _replId: process.env.REPL_ID || "", ...creds };
+  fs.writeFileSync(getSetupFilePath(), JSON.stringify(data, null, 2));
 }
 
 function getBotsSetupStatus(): { configured: boolean; bots: Array<{ id: string; email: string; hasEnvVar: boolean }> } {
@@ -91,18 +94,21 @@ function getBotsSetupStatus(): { configured: boolean; bots: Array<{ id: string; 
 }
 
 function clearStaleCredentialsOnRemix() {
-  const hasAnyEnvSecrets = BOT_CONFIGS.some(({ emailKey, passKey }) =>
-    !!(process.env[emailKey] && process.env[passKey])
-  );
   const filePath = getSetupFilePath();
-  if (!hasAnyEnvSecrets && fs.existsSync(filePath)) {
-    // Don't delete if the file contains already-registered bots —
-    // initBots will load them and set process.env from there.
-    const creds = loadGeneratedCredentials();
-    const hasRegistered = creds && Object.values(creds).some((c: any) => c.registered);
-    if (!hasRegistered) {
+  if (!fs.existsSync(filePath)) return;
+
+  try {
+    const raw = JSON.parse(fs.readFileSync(filePath, "utf-8"));
+    const storedReplId = raw._replId;
+    const currentReplId = process.env.REPL_ID || "";
+
+    // If the file was saved on a different Repl (i.e. this is a remix), clear it
+    // so the new owner goes through the setup flow to generate their own accounts.
+    if (storedReplId && currentReplId && storedReplId !== currentReplId) {
       fs.unlinkSync(filePath);
     }
+  } catch {
+    fs.unlinkSync(filePath);
   }
 }
 
