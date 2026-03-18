@@ -29,6 +29,7 @@ import {
   PlayCircle,
   StopCircle,
   Pencil,
+  KeyRound,
   Check,
 } from "lucide-react";
 
@@ -551,6 +552,12 @@ export default function Dashboard() {
     await fetch("/api/bots/stop-all", { method: "POST" });
   };
 
+  const resetCredentials = async () => {
+    if (!confirm("This will stop all bots and clear all credentials. You will need to go through setup again. Continue?")) return;
+    await fetch("/api/setup/reset", { method: "POST" });
+    window.location.href = "/setup";
+  };
+
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-zinc-100">
       <div className="border-b border-zinc-800/80 bg-[#0e0e16]/80 backdrop-blur-sm sticky top-0 z-50">
@@ -583,6 +590,16 @@ export default function Dashboard() {
             >
               <StopCircle className="w-3.5 h-3.5 mr-1" />
               Stop All
+            </Button>
+            <Button
+              data-testid="button-change-credentials"
+              onClick={resetCredentials}
+              variant="outline"
+              size="sm"
+              className="border-zinc-700 bg-zinc-900/50 hover:bg-zinc-800/60 text-zinc-400 hover:text-zinc-200 text-xs"
+            >
+              <KeyRound className="w-3.5 h-3.5 mr-1" />
+              Change Credentials
             </Button>
           </div>
         </div>

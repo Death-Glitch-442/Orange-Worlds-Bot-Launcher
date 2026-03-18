@@ -253,6 +253,26 @@ export async function registerRoutes(
     res.json({ results });
   });
 
+  app.post("/api/setup/reset", async (_req, res) => {
+    // Stop all running bots first
+    const bots = botManager.getAllBots();
+    await Promise.all([...bots.values()].map(b => b.stop().catch(() => {})));
+
+    // Clear process.env credentials
+    for (const { emailKey, passKey } of BOT_CONFIGS) {
+      delete process.env[emailKey];
+      delete process.env[passKey];
+    }
+
+    // Delete the credentials file
+    const filePath = getSetupFilePath();
+    if (fs.existsSync(filePath)) {
+      fs.unlinkSync(filePath);
+    }
+
+    res.json({ message: "Credentials reset. Setup required." });
+  });
+
   app.post("/api/setup/activate", (_req, res) => {
     const creds = loadGeneratedCredentials();
     if (!creds) {
