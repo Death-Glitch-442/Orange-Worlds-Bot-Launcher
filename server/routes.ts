@@ -96,7 +96,13 @@ function clearStaleCredentialsOnRemix() {
   );
   const filePath = getSetupFilePath();
   if (!hasAnyEnvSecrets && fs.existsSync(filePath)) {
-    fs.unlinkSync(filePath);
+    // Don't delete if the file contains already-registered bots —
+    // initBots will load them and set process.env from there.
+    const creds = loadGeneratedCredentials();
+    const hasRegistered = creds && Object.values(creds).some((c: any) => c.registered);
+    if (!hasRegistered) {
+      fs.unlinkSync(filePath);
+    }
   }
 }
 
