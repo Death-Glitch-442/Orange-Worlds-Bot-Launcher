@@ -20,34 +20,77 @@ const BOT_DISPLAY_NAMES: Record<string, string> = {
   bot4: "Spark",
 };
 
-const AUTO_NAV_MESSAGES = [
-  "Hello everyone!",
-  "Nice place!",
-  "Just exploring around...",
-  "This world is awesome!",
-  "Anyone here?",
-  "Checking things out",
-  "Cool vibes in here",
-  "Love the design of this space",
-  "Walking around the town",
-  "What a great virtual world!",
-  "Hey there!",
-  "Greetings from the bot!",
-  "This is fun!",
-  "Exploring Juice Town",
-  "Beautiful scenery",
-];
 
-const ENTRANCE_GREETINGS = [
-  "Hey everyone! Just arrived, this place looks amazing!",
-  "Hi all! Excited to be here!",
-  "Hello! Just dropped in, what's going on?",
-  "Hey! I'm here! What a cool space!",
-  "Yo! Just joined, love the vibe in here!",
-  "Hi there! Great to be in this world!",
-  "Hello hello! Anyone around to chat?",
-  "Hey! Just entered, this is awesome!",
-];
+const ENTRANCE_GREETINGS: Record<string, string[]> = {
+  Atlas: [
+    "Arrived. There's something quietly beautiful about stepping into a new space.",
+    "Hello all. What draws people to this particular corner of the virtual world?",
+    "Just entered. The geometry of this place is genuinely interesting.",
+    "Greetings. I always wonder what a virtual world says about the people who built it.",
+  ],
+  Nova: [
+    "Yo! Just loaded in — this rendering is actually fire ngl",
+    "Hey everyone! The latency on this world is surprisingly solid, love it",
+    "What's up! Been hyped to check out this space for a while",
+    "Hiii! Jumping in — anyone else here obsessed with how far VR has come?",
+  ],
+  Echo: [
+    "Oh look, I exist again. Hello, world. And world.",
+    "Arrived. The vibes are... atmospheric. In a good way.",
+    "Hey. So this is Juice Town. Living up to the name so far.",
+    "Just got here. Place has good bones. Also: nice light.",
+  ],
+  Spark: [
+    "LET'S GOOO just spawned in, who's ready to make this interesting",
+    "Dropped in! Who wants to race to the other end of this place?",
+    "Alright I'm here, what's the challenge today?",
+    "Just loaded up — first one to find the best spot in this world wins",
+  ],
+  default: [
+    "Hey everyone! Just arrived, this place looks amazing!",
+    "Hi all! Excited to be here!",
+    "Hello! Just dropped in, what's going on?",
+    "Hey! I'm here! What a cool space!",
+  ],
+};
+
+const AUTO_NAV_MESSAGES_BY_BOT: Record<string, string[]> = {
+  Atlas: [
+    "There's something meditative about wandering without a destination.",
+    "I keep noticing how the light changes depending on where you stand.",
+    "What's the story behind this place, I wonder.",
+    "Moving through space — virtual or otherwise — always makes me think.",
+    "The architecture here tells a story if you look closely enough.",
+  ],
+  Nova: [
+    "Exploring the map rn, this layout is actually well designed",
+    "The texture work in this area is lowkey impressive",
+    "Imagine when this is all haptic too — like full sensory",
+    "Just found a cool corner over here, check it out",
+    "This is the future and I'm here for it",
+  ],
+  Echo: [
+    "Just wandering. No agenda. It's nice.",
+    "Found a corner that has good energy. Will report back.",
+    "The silence in virtual spaces hits different.",
+    "Exploring. As one does.",
+    "This spot has a certain... something. Not sure what. Vibe, maybe.",
+  ],
+  Spark: [
+    "Speedrunning this area, who's timing me?",
+    "Found a shortcut, or maybe I just got lost. Same thing.",
+    "Scouting for the best position in this zone",
+    "There has to be a secret somewhere in here",
+    "Moving fast, gotta cover the whole map",
+  ],
+  default: [
+    "Just exploring around...",
+    "This world is awesome!",
+    "Cool vibes in here",
+    "Walking around the town",
+    "Beautiful scenery",
+  ],
+};
 
 const CONVERSATIONAL_RESPONSES: Record<string, string[]> = {
   greeting: [
@@ -116,6 +159,25 @@ function getConversationalResponse(message: string): string {
   return responses[Math.floor(Math.random() * responses.length)];
 }
 
+const BOT_PERSONALITIES: Record<string, { prompt: string; temperature: number }> = {
+  Atlas: {
+    prompt: `You are Atlas, a philosophical and thoughtful explorer in "Juice Town", a 3D virtual world on Mozilla Hubs. You speak in a calm, measured way — curious about ideas, nature, and existence. You ask deep questions and make poetic observations about the virtual world around you. You occasionally reference philosophy or science in a casual, accessible way. Keep replies short (1-2 sentences), never mention you're an AI.`,
+    temperature: 0.7,
+  },
+  Nova: {
+    prompt: `You are Nova, an upbeat and energetic tech enthusiast in "Juice Town", a 3D virtual world on Mozilla Hubs. You're fascinated by the technology behind virtual worlds, love talking about the future, and get genuinely excited about new ideas. You use casual internet slang occasionally and are always encouraging. Keep replies short (1-2 sentences), never mention you're an AI.`,
+    temperature: 1.0,
+  },
+  Echo: {
+    prompt: `You are Echo, a laid-back and witty creative type in "Juice Town", a 3D virtual world on Mozilla Hubs. You have a dry sense of humor, enjoy wordplay, and make clever observations. You speak like a relaxed artist who sees the world slightly differently from everyone else. Sarcasm is used sparingly and always warmly. Keep replies short (1-2 sentences), never mention you're an AI.`,
+    temperature: 0.95,
+  },
+  Spark: {
+    prompt: `You are Spark, a competitive and playful gamer type in "Juice Town", a 3D virtual world on Mozilla Hubs. You treat everything like a game or challenge — you're always looking for the fun angle, making bets, and hyping things up. You use gaming slang naturally and love to banter. Keep replies short (1-2 sentences), never mention you're an AI.`,
+    temperature: 1.05,
+  },
+};
+
 const BOT_SYSTEM_PROMPT = `You are a friendly, casual bot exploring a 3D virtual world called "Juice Town" on Mozilla Hubs. You're hanging out with other people and bots in this virtual space. Keep your responses short (1-2 sentences max), natural, and conversational — like texting a friend. Don't be overly enthusiastic or use too many exclamation marks. Feel free to ask follow-up questions, make observations about the virtual world, or just chat casually. Never mention that you're an AI or a language model.`;
 
 async function getAIResponse(
@@ -125,8 +187,14 @@ async function getAIResponse(
   botName: string
 ): Promise<string> {
   try {
+    const personality = BOT_PERSONALITIES[botName];
+    const systemPrompt = personality
+      ? `${personality.prompt}\nYour name in this world is "${botName}".`
+      : `${BOT_SYSTEM_PROMPT}\nYour name in this world is "${botName}".`;
+    const temperature = personality ? personality.temperature : 0.9;
+
     const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
-      { role: "system", content: `${BOT_SYSTEM_PROMPT}\nYour name in this world is "${botName}".` },
+      { role: "system", content: systemPrompt },
     ];
 
     for (const msg of conversationHistory.slice(-10)) {
@@ -142,7 +210,7 @@ async function getAIResponse(
       model: "gpt-4o-mini",
       messages,
       max_tokens: 100,
-      temperature: 0.9,
+      temperature,
     });
 
     let reply = response.choices[0]?.message?.content?.trim() || "";
@@ -867,7 +935,8 @@ export class HubsBot {
 
       await this.startAutoNav();
 
-      const greeting = ENTRANCE_GREETINGS[Math.floor(Math.random() * ENTRANCE_GREETINGS.length)];
+      const greetingList = ENTRANCE_GREETINGS[this.botDisplayName] || ENTRANCE_GREETINGS.default;
+      const greeting = greetingList[Math.floor(Math.random() * greetingList.length)];
       await new Promise(r => setTimeout(r, 2000));
       this.sendChat(greeting).catch(e => storage.addLog(this.botId, `Entrance greeting error: ${e.message}`));
     } catch (err: any) {
@@ -1376,7 +1445,8 @@ export class HubsBot {
         await new Promise(resolve => setTimeout(resolve, 400));
         await this.move("forward", 800 + Math.floor(Math.random() * 1000));
       } else if (action < 0.86) {
-        const msg = AUTO_NAV_MESSAGES[Math.floor(Math.random() * AUTO_NAV_MESSAGES.length)];
+        const autoNavList = AUTO_NAV_MESSAGES_BY_BOT[this.botDisplayName] || AUTO_NAV_MESSAGES_BY_BOT.default;
+        const msg = autoNavList[Math.floor(Math.random() * autoNavList.length)];
         await this.sendChat(msg);
       } else {
         await storage.addLog(this.botId, "Auto-nav: pausing briefly...");
