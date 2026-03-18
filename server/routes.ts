@@ -52,7 +52,7 @@ function getSetupFilePath(): string {
   return path.join(process.cwd(), ".bot-credentials.json");
 }
 
-function loadGeneratedCredentials(): Record<string, { email: string; password: string; registered?: boolean }> | null {
+function loadGeneratedCredentials(): Record<string, { email: string; password: string; registered?: boolean; displayName?: string }> | null {
   try {
     const filePath = getSetupFilePath();
     if (fs.existsSync(filePath)) {
@@ -64,9 +64,17 @@ function loadGeneratedCredentials(): Record<string, { email: string; password: s
   return null;
 }
 
-function saveGeneratedCredentials(creds: Record<string, { email: string; password: string; registered?: boolean }>) {
+function saveGeneratedCredentials(creds: Record<string, { email: string; password: string; registered?: boolean; displayName?: string }>) {
   const data = { _replId: process.env.REPL_ID || "", ...creds };
   fs.writeFileSync(getSetupFilePath(), JSON.stringify(data, null, 2));
+}
+
+function persistBotDisplayName(botId: string, displayName: string) {
+  const creds = loadGeneratedCredentials() || {};
+  if (creds[botId]) {
+    creds[botId] = { ...creds[botId], displayName };
+    saveGeneratedCredentials(creds);
+  }
 }
 
 function getBotsSetupStatus(): { configured: boolean; bots: Array<{ id: string; email: string; hasEnvVar: boolean }> } {
@@ -132,7 +140,11 @@ function initBots() {
     }
 
     if (email && password) {
-      botManager.createBot(id, { email, password, apiKey });
+      const bot = botManager.createBot(id, { email, password, apiKey });
+      const savedName = generated[id]?.displayName;
+      if (savedName) {
+        bot.setDisplayName(savedName).catch(() => {});
+      }
     }
   }
 }
@@ -436,6 +448,7 @@ export async function registerRoutes(
         return res.status(400).json({ error: "name is required" });
       }
       await bot.setDisplayName(name.trim());
+      persistBotDisplayName(req.params.botId, name.trim());
       botManager.updateBotNames();
       res.json({ message: "Name updated", name: name.trim() });
     } catch (err: any) {

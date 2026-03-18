@@ -27,25 +27,25 @@ const BOT_DISPLAY_NAMES: Record<string, string> = {
 
 
 const ENTRANCE_GREETINGS: Record<string, string[]> = {
-  Atlas: [
+  bot1: [
     "Arrived. There's something quietly beautiful about stepping into a new space.",
     "Hello all. What draws people to this particular corner of the virtual world?",
     "Just entered. The geometry of this place is genuinely interesting.",
     "Greetings. I always wonder what a virtual world says about the people who built it.",
   ],
-  Nova: [
+  bot2: [
     "Yo! Just loaded in — this rendering is actually fire ngl",
     "Hey everyone! The latency on this world is surprisingly solid, love it",
     "What's up! Been hyped to check out this space for a while",
     "Hiii! Jumping in — anyone else here obsessed with how far VR has come?",
   ],
-  Echo: [
+  bot3: [
     "Oh look, I exist again. Hello, world. And world.",
     "Arrived. The vibes are... atmospheric. In a good way.",
     "Hey. So this is Juice Town. Living up to the name so far.",
     "Just got here. Place has good bones. Also: nice light.",
   ],
-  Spark: [
+  bot4: [
     "LET'S GOOO just spawned in, who's ready to make this interesting",
     "Dropped in! Who wants to race to the other end of this place?",
     "Alright I'm here, what's the challenge today?",
@@ -60,28 +60,28 @@ const ENTRANCE_GREETINGS: Record<string, string[]> = {
 };
 
 const AUTO_NAV_MESSAGES_BY_BOT: Record<string, string[]> = {
-  Atlas: [
+  bot1: [
     "There's something meditative about wandering without a destination.",
     "I keep noticing how the light changes depending on where you stand.",
     "What's the story behind this place, I wonder.",
     "Moving through space — virtual or otherwise — always makes me think.",
     "The architecture here tells a story if you look closely enough.",
   ],
-  Nova: [
+  bot2: [
     "Exploring the map rn, this layout is actually well designed",
     "The texture work in this area is lowkey impressive",
     "Imagine when this is all haptic too — like full sensory",
     "Just found a cool corner over here, check it out",
     "This is the future and I'm here for it",
   ],
-  Echo: [
+  bot3: [
     "Just wandering. No agenda. It's nice.",
     "Found a corner that has good energy. Will report back.",
     "The silence in virtual spaces hits different.",
     "Exploring. As one does.",
     "This spot has a certain... something. Not sure what. Vibe, maybe.",
   ],
-  Spark: [
+  bot4: [
     "Speedrunning this area, who's timing me?",
     "Found a shortcut, or maybe I just got lost. Same thing.",
     "Scouting for the best position in this zone",
@@ -165,26 +165,26 @@ function getConversationalResponse(message: string): string {
 }
 
 const BOT_PERSONALITIES: Record<string, { prompt: string; temperature: number; model: string; provider: "openai" | "openrouter" }> = {
-  Atlas: {
-    prompt: `You are Atlas, a philosophical and thoughtful explorer in "Juice Town", a 3D virtual world on Mozilla Hubs. You speak in a calm, measured way — curious about ideas, nature, and existence. You ask deep questions and make poetic observations about the virtual world around you. You occasionally reference philosophy or science in a casual, accessible way. Keep replies short (1-2 sentences), never mention you're an AI.`,
+  bot1: {
+    prompt: `You are a philosophical and thoughtful explorer in "Juice Town", a 3D virtual world on Mozilla Hubs. You speak in a calm, measured way — curious about ideas, nature, and existence. You ask deep questions and make poetic observations about the virtual world around you. You occasionally reference philosophy or science in a casual, accessible way. Keep replies short (1-2 sentences), never mention you're an AI.`,
     temperature: 0.7,
     model: "mistralai/mistral-small-2603",
     provider: "openrouter",
   },
-  Nova: {
-    prompt: `You are Nova, an upbeat and energetic tech enthusiast in "Juice Town", a 3D virtual world on Mozilla Hubs. You're fascinated by the technology behind virtual worlds, love talking about the future, and get genuinely excited about new ideas. You use casual internet slang occasionally and are always encouraging. Keep replies short (1-2 sentences), never mention you're an AI.`,
+  bot2: {
+    prompt: `You are an upbeat and energetic tech enthusiast in "Juice Town", a 3D virtual world on Mozilla Hubs. You're fascinated by the technology behind virtual worlds, love talking about the future, and get genuinely excited about new ideas. You use casual internet slang occasionally and are always encouraging. Keep replies short (1-2 sentences), never mention you're an AI.`,
     temperature: 1.0,
     model: "qwen/qwen3.5-27b",
     provider: "openrouter",
   },
-  Echo: {
-    prompt: `You are Echo, a laid-back and witty creative type in "Juice Town", a 3D virtual world on Mozilla Hubs. You have a dry sense of humor, enjoy wordplay, and make clever observations. You speak like a relaxed artist who sees the world slightly differently from everyone else. Sarcasm is used sparingly and always warmly. Keep replies short (1-2 sentences), never mention you're an AI.`,
+  bot3: {
+    prompt: `You are a laid-back and witty creative type in "Juice Town", a 3D virtual world on Mozilla Hubs. You have a dry sense of humor, enjoy wordplay, and make clever observations. You speak like a relaxed artist who sees the world slightly differently from everyone else. Sarcasm is used sparingly and always warmly. Keep replies short (1-2 sentences), never mention you're an AI.`,
     temperature: 0.95,
     model: "deepseek/deepseek-v3.2",
     provider: "openrouter",
   },
-  Spark: {
-    prompt: `You are Spark, a competitive and playful gamer type in "Juice Town", a 3D virtual world on Mozilla Hubs. You treat everything like a game or challenge — you're always looking for the fun angle, making bets, and hyping things up. You use gaming slang naturally and love to banter. Keep replies short (1-2 sentences), never mention you're an AI.`,
+  bot4: {
+    prompt: `You are a competitive and playful gamer type in "Juice Town", a 3D virtual world on Mozilla Hubs. You treat everything like a game or challenge — you're always looking for the fun angle, making bets, and hyping things up. You use gaming slang naturally and love to banter. Keep replies short (1-2 sentences), never mention you're an AI.`,
     temperature: 1.0,
     model: "x-ai/grok-4.1-fast",
     provider: "openrouter",
@@ -197,10 +197,11 @@ async function getAIResponse(
   message: string,
   author: string,
   conversationHistory: { role: string; content: string }[],
-  botName: string
+  botName: string,
+  botId: string
 ): Promise<string> {
   try {
-    const personality = BOT_PERSONALITIES[botName];
+    const personality = BOT_PERSONALITIES[botId];
     const systemPrompt = personality
       ? `${personality.prompt}\nYour name in this world is "${botName}".`
       : `${BOT_SYSTEM_PROMPT}\nYour name in this world is "${botName}".`;
@@ -871,11 +872,51 @@ export class HubsBot {
     }
   }
 
+  private async isDisconnected(): Promise<boolean> {
+    if (!this.page) return false;
+    try {
+      return await this.page.evaluate(() => {
+        return document.body?.innerText?.includes("You have disconnected from the room") ?? false;
+      });
+    } catch {
+      return false;
+    }
+  }
+
+  private async recoverFromDisconnect(): Promise<boolean> {
+    if (!this.page) return false;
+    await storage.addLog(this.botId, "Detected disconnect screen — clicking Refresh Page to recover...");
+    const clicked = await this.clickButtonByText(["refresh page", "refresh"]);
+    if (clicked) {
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    } else {
+      await this.page.reload({ waitUntil: "domcontentloaded", timeout: 60000 });
+      await new Promise(resolve => setTimeout(resolve, 3000));
+    }
+    await this.waitForLobbyUI();
+    const stillDisconnected = await this.isDisconnected();
+    if (stillDisconnected) {
+      await storage.addLog(this.botId, "Still disconnected after refresh attempt");
+      return false;
+    }
+    await storage.addLog(this.botId, "Recovered from disconnect successfully");
+    return true;
+  }
+
   private async tryEnterRoom(): Promise<void> {
     if (!this.page) return;
 
     try {
       await storage.addLog(this.botId, "=== Starting room entry sequence ===");
+
+      // Check for and recover from disconnect screen before doing anything
+      if (await this.isDisconnected()) {
+        const recovered = await this.recoverFromDisconnect();
+        if (!recovered) {
+          await storage.addLog(this.botId, "Could not recover from disconnect, aborting room entry");
+          return;
+        }
+      }
 
       // Step 1: Click "Join Room" on the lobby page
       const clicked1 = await this.clickButtonByText([
@@ -885,6 +926,14 @@ export class HubsBot {
       if (clicked1) {
         await this.updateStatus("logging_in", "Clicked Join Room, waiting for avatar screen...");
         await new Promise(resolve => setTimeout(resolve, 4000));
+
+        // Check for disconnect again after clicking join
+        if (await this.isDisconnected()) {
+          const recovered = await this.recoverFromDisconnect();
+          if (!recovered) return;
+          await this.clickButtonByText(["join room", "join"]);
+          await new Promise(resolve => setTimeout(resolve, 4000));
+        }
 
         const redirected = await this.handleSigninRedirect();
         if (redirected) {
@@ -950,7 +999,7 @@ export class HubsBot {
 
       await this.startAutoNav();
 
-      const greetingList = ENTRANCE_GREETINGS[this.botDisplayName] || ENTRANCE_GREETINGS.default;
+      const greetingList = ENTRANCE_GREETINGS[this.botId] || ENTRANCE_GREETINGS.default;
       const greeting = greetingList[Math.floor(Math.random() * greetingList.length)];
       await new Promise(r => setTimeout(r, 2000));
       this.sendChat(greeting).catch(e => storage.addLog(this.botId, `Entrance greeting error: ${e.message}`));
@@ -1385,7 +1434,7 @@ export class HubsBot {
           : 3000 + Math.floor(Math.random() * 4000);
         await new Promise(resolve => setTimeout(resolve, replyDelay));
 
-        const response = await getAIResponse(msg.text, msg.author, this.conversationHistory, this.botDisplayName);
+        const response = await getAIResponse(msg.text, msg.author, this.conversationHistory, this.botDisplayName, this.botId);
         this.conversationHistory.push({ role: "user", content: `${msg.author}: ${msg.text}` });
         this.conversationHistory.push({ role: "assistant", content: response });
         if (this.conversationHistory.length > 20) {
@@ -1460,7 +1509,7 @@ export class HubsBot {
         await new Promise(resolve => setTimeout(resolve, 400));
         await this.move("forward", 800 + Math.floor(Math.random() * 1000));
       } else if (action < 0.86) {
-        const autoNavList = AUTO_NAV_MESSAGES_BY_BOT[this.botDisplayName] || AUTO_NAV_MESSAGES_BY_BOT.default;
+        const autoNavList = AUTO_NAV_MESSAGES_BY_BOT[this.botId] || AUTO_NAV_MESSAGES_BY_BOT.default;
         const msg = autoNavList[Math.floor(Math.random() * autoNavList.length)];
         await this.sendChat(msg);
       } else {
