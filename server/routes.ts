@@ -123,7 +123,7 @@ function initBots() {
 
     if (!email || !password) {
       const cred = generated[id];
-      if (cred && cred.registered && cred.email && cred.password) {
+      if (cred && cred.email && cred.password) {
         email = cred.email;
         password = cred.password;
         process.env[emailKey] = email;
