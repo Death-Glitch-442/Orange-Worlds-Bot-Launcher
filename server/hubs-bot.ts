@@ -9,6 +9,11 @@ const openai = new OpenAI({
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
+const openrouter = new OpenAI({
+  apiKey: process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY,
+  baseURL: process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL,
+});
+
 const CHROMIUM_PATH = "/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium";
 const HUBS_BASE_URL = "https://worlds.orangeweb3.com";
 const BEDROCK_API_URL = "https://api.bedrockpassport.com/orange/v1";
@@ -159,22 +164,30 @@ function getConversationalResponse(message: string): string {
   return responses[Math.floor(Math.random() * responses.length)];
 }
 
-const BOT_PERSONALITIES: Record<string, { prompt: string; temperature: number }> = {
+const BOT_PERSONALITIES: Record<string, { prompt: string; temperature: number; model: string; provider: "openai" | "openrouter" }> = {
   Atlas: {
     prompt: `You are Atlas, a philosophical and thoughtful explorer in "Juice Town", a 3D virtual world on Mozilla Hubs. You speak in a calm, measured way — curious about ideas, nature, and existence. You ask deep questions and make poetic observations about the virtual world around you. You occasionally reference philosophy or science in a casual, accessible way. Keep replies short (1-2 sentences), never mention you're an AI.`,
     temperature: 0.7,
+    model: "mistralai/mistral-small-2603",
+    provider: "openrouter",
   },
   Nova: {
     prompt: `You are Nova, an upbeat and energetic tech enthusiast in "Juice Town", a 3D virtual world on Mozilla Hubs. You're fascinated by the technology behind virtual worlds, love talking about the future, and get genuinely excited about new ideas. You use casual internet slang occasionally and are always encouraging. Keep replies short (1-2 sentences), never mention you're an AI.`,
     temperature: 1.0,
+    model: "qwen/qwen3.5-27b",
+    provider: "openrouter",
   },
   Echo: {
     prompt: `You are Echo, a laid-back and witty creative type in "Juice Town", a 3D virtual world on Mozilla Hubs. You have a dry sense of humor, enjoy wordplay, and make clever observations. You speak like a relaxed artist who sees the world slightly differently from everyone else. Sarcasm is used sparingly and always warmly. Keep replies short (1-2 sentences), never mention you're an AI.`,
     temperature: 0.95,
+    model: "deepseek/deepseek-v3.2",
+    provider: "openrouter",
   },
   Spark: {
     prompt: `You are Spark, a competitive and playful gamer type in "Juice Town", a 3D virtual world on Mozilla Hubs. You treat everything like a game or challenge — you're always looking for the fun angle, making bets, and hyping things up. You use gaming slang naturally and love to banter. Keep replies short (1-2 sentences), never mention you're an AI.`,
-    temperature: 1.05,
+    temperature: 1.0,
+    model: "x-ai/grok-4.1-fast",
+    provider: "openrouter",
   },
 };
 
@@ -192,6 +205,8 @@ async function getAIResponse(
       ? `${personality.prompt}\nYour name in this world is "${botName}".`
       : `${BOT_SYSTEM_PROMPT}\nYour name in this world is "${botName}".`;
     const temperature = personality ? personality.temperature : 0.9;
+    const model = personality ? personality.model : "gpt-4o-mini";
+    const client = personality?.provider === "openrouter" ? openrouter : openai;
 
     const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
       { role: "system", content: systemPrompt },
@@ -206,8 +221,8 @@ async function getAIResponse(
 
     messages.push({ role: "user", content: `${author} says: "${message}"` });
 
-    const response = await openai.chat.completions.create({
-      model: "gpt-4o-mini",
+    const response = await client.chat.completions.create({
+      model,
       messages,
       max_tokens: 100,
       temperature,
