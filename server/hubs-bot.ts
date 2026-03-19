@@ -718,6 +718,29 @@ export class HubsBot {
     }
   }
 
+  private async sanitizeDisplayNameInput(): Promise<void> {
+    if (!this.page) return;
+    try {
+      const result = await this.page.evaluate((displayName: string) => {
+        const input = document.querySelector('input#id_0, input.TextInput__text-input__HqvuV') as HTMLInputElement | null;
+        if (!input) return null;
+        const current = input.value;
+        const sanitized = displayName.replace(/[^A-Za-z0-9_~\s\-]/g, '').trim() || displayName.replace(/\s/g, '-').replace(/[^A-Za-z0-9_~\-]/g, '').trim() || 'BotUser';
+        if (current === sanitized) return 'already-valid';
+        const nativeSetter = Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')?.set;
+        if (nativeSetter) nativeSetter.call(input, sanitized);
+        input.dispatchEvent(new Event('input', { bubbles: true }));
+        input.dispatchEvent(new Event('change', { bubbles: true }));
+        return sanitized;
+      }, this.botDisplayName);
+      if (result && result !== 'already-valid') {
+        await storage.addLog(this.botId, `Sanitized display name for Hubs validation: "${this.botDisplayName}" → "${result}"`);
+      }
+    } catch (err) {
+      await storage.addLog(this.botId, `Could not sanitize display name: ${err}`);
+    }
+  }
+
   private async waitForButton(textPatterns: string[], maxWaitSecs: number): Promise<boolean> {
     if (!this.page) return false;
     for (let i = 0; i < maxWaitSecs; i++) {
@@ -995,7 +1018,10 @@ export class HubsBot {
       await this.handleSigninRedirect();
 
       // Step 2: Click "Accept" on the avatar/name configuration screen
+      // First sanitize the display name input so Hubs validation doesn't silently block Accept
       await this.waitForButton(["accept"], 30);
+      await this.sanitizeDisplayNameInput();
+      await new Promise(resolve => setTimeout(resolve, 500));
       const clicked2 = await this.clickButtonByText(["accept"]);
       if (clicked2) {
         await this.updateStatus("logging_in", "Accepted avatar settings, waiting for entry screen...");
@@ -1004,7 +1030,16 @@ export class HubsBot {
       }
 
       // Step 3: Click "Enter Room" to actually join the 3D space
-      await this.waitForButton(["enter room"], 30);
+      // If Enter Room doesn't appear within 15s, check if Accept modal is still showing and retry
+      let foundEnterRoom = await this.waitForButton(["enter room"], 15);
+      if (!foundEnterRoom) {
+        await storage.addLog(this.botId, "Enter Room not found after 15s — retrying Accept with sanitized name...");
+        await this.sanitizeDisplayNameInput();
+        await new Promise(resolve => setTimeout(resolve, 500));
+        await this.clickButtonByText(["accept"]);
+        await new Promise(resolve => setTimeout(resolve, 4000));
+        foundEnterRoom = await this.waitForButton(["enter room"], 15);
+      }
       const clicked3 = await this.clickButtonByText(["enter room"]);
       if (clicked3) {
         await this.updateStatus("connected", "Entered the room!");
