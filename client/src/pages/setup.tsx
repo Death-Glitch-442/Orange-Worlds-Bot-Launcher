@@ -302,7 +302,7 @@ export default function SetupPage({ onComplete }: { onComplete: () => void }) {
                 className="text-zinc-500 hover:text-zinc-300 -mt-1 px-0"
               >
                 <SkipForward className="w-3.5 h-3.5 mr-1.5" />
-                Skip — use OpenAI fallback
+                Skip — bots will use scripted responses until a key is added
               </Button>
             </CardContent>
           </Card>

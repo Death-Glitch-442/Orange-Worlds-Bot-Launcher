@@ -608,8 +608,8 @@ export default function Dashboard() {
         <div className="bg-zinc-900/80 border-b border-zinc-700/60 px-6 py-2 flex items-center gap-3 text-sm text-zinc-400">
           <span className="text-zinc-500 text-base">ℹ</span>
           <span>
-            No OpenRouter key — bots are using OpenAI as fallback.
-            {" "}<a href="/setup" className="text-violet-400 underline underline-offset-2">Add an OpenRouter key on the setup page</a> to unlock Mistral, Qwen, DeepSeek & xAI models.
+            No OpenRouter key — bots are using scripted responses.
+            {" "}<a href="/setup" className="text-violet-400 underline underline-offset-2">Add an OpenRouter key on the setup page</a> to enable real AI for all 4 bots.
           </span>
         </div>
       )}
