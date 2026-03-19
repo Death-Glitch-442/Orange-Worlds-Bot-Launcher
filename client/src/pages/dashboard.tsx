@@ -605,11 +605,11 @@ export default function Dashboard() {
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-zinc-100">
       {openrouterMissing && (
-        <div className="bg-amber-950/80 border-b border-amber-700/60 px-6 py-2.5 flex items-center gap-3 text-sm text-amber-200">
-          <span className="text-amber-400 text-base">⚠</span>
+        <div className="bg-zinc-900/80 border-b border-zinc-700/60 px-6 py-2 flex items-center gap-3 text-sm text-zinc-400">
+          <span className="text-zinc-500 text-base">ℹ</span>
           <span>
-            <strong>OpenRouter not enabled.</strong> Bots will use scripted fallbacks instead of real AI.
-            {" "}No API key needed — in the Replit sidebar go to <strong>Tools → Integrations</strong>, find <strong>OpenRouter</strong>, and click <strong>Enable</strong>. Usage is billed to your Replit credits.
+            No OpenRouter key — bots are using OpenAI as fallback.
+            {" "}<a href="/setup" className="text-violet-400 underline underline-offset-2">Add an OpenRouter key on the setup page</a> to unlock Mistral, Qwen, DeepSeek & xAI models.
           </span>
         </div>
       )}

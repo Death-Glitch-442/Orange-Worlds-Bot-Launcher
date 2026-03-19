@@ -16,6 +16,8 @@ import {
   X,
   Save,
   AlertCircle,
+  Key,
+  SkipForward,
 } from "lucide-react";
 
 interface BotCredential {
@@ -45,6 +47,22 @@ export default function SetupPage({ onComplete }: { onComplete: () => void }) {
   const [editPassword, setEditPassword] = useState("");
   const [regResults, setRegResults] = useState<Record<string, RegistrationResult>>({});
   const [openrouterMissing, setOpenrouterMissing] = useState(false);
+  const [apiKeyInput, setApiKeyInput] = useState("");
+  const [savingKey, setSavingKey] = useState(false);
+  const [keyDismissed, setKeyDismissed] = useState(false);
+
+  const saveApiKey = async () => {
+    if (!apiKeyInput.trim()) return;
+    setSavingKey(true);
+    await fetch("/api/integrations/openrouter-key", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ key: apiKeyInput.trim() }),
+    });
+    setOpenrouterMissing(false);
+    setKeyDismissed(true);
+    setSavingKey(false);
+  };
 
   const checkStatus = async () => {
     try {
@@ -229,15 +247,6 @@ export default function SetupPage({ onComplete }: { onComplete: () => void }) {
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-zinc-100">
-      {openrouterMissing && (
-        <div className="bg-amber-950/80 border-b border-amber-700/60 px-6 py-3 flex items-start gap-3 text-sm text-amber-200">
-          <span className="text-amber-400 text-base mt-0.5">⚠</span>
-          <span>
-            <strong>Step 0 — Enable OpenRouter:</strong> Bots need this to generate real AI responses.
-            {" "}No API key required — in the Replit sidebar go to <strong>Tools → Integrations</strong>, find <strong>OpenRouter</strong>, and click <strong>Enable</strong>. Usage is billed to your Replit credits.
-          </span>
-        </div>
-      )}
       <div className="max-w-3xl mx-auto px-6 py-12">
         <div className="text-center mb-10">
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-600 flex items-center justify-center mx-auto mb-4">
@@ -250,6 +259,54 @@ export default function SetupPage({ onComplete }: { onComplete: () => void }) {
             Set up your bot accounts to get started. Each bot needs a registered account on the Orange Web3 platform.
           </p>
         </div>
+
+        {openrouterMissing && !keyDismissed && (
+          <Card className="bg-[#12121c] border-zinc-800/60 mb-6">
+            <CardHeader>
+              <CardTitle className="text-lg flex items-center gap-2">
+                <Key className="w-5 h-5 text-violet-400" />
+                AI Provider
+                <span className="ml-auto text-xs font-normal text-zinc-500 bg-zinc-800 px-2 py-0.5 rounded-full">Optional</span>
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="space-y-4">
+              <p className="text-zinc-400 text-sm">
+                Paste an <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-violet-400 underline underline-offset-2">OpenRouter API key</a> to unlock all 4 bot AI models (Mistral, Qwen, DeepSeek, xAI).
+                Or skip — bots will fall back to OpenAI automatically.
+              </p>
+              <div className="flex gap-2">
+                <Input
+                  data-testid="input-openrouter-key"
+                  type="password"
+                  placeholder="sk-or-v1-..."
+                  value={apiKeyInput}
+                  onChange={e => setApiKeyInput(e.target.value)}
+                  onKeyDown={e => e.key === "Enter" && saveApiKey()}
+                  className="bg-zinc-900 border-zinc-700 text-zinc-100 placeholder:text-zinc-600 font-mono text-sm"
+                />
+                <Button
+                  data-testid="button-save-openrouter-key"
+                  onClick={saveApiKey}
+                  disabled={savingKey || !apiKeyInput.trim()}
+                  className="bg-violet-600 hover:bg-violet-500 border-0 text-white shrink-0"
+                >
+                  {savingKey ? <Loader2 className="w-4 h-4 animate-spin" /> : <Save className="w-4 h-4" />}
+                  <span className="ml-2">Save</span>
+                </Button>
+              </div>
+              <Button
+                data-testid="button-skip-openrouter-key"
+                variant="ghost"
+                size="sm"
+                onClick={() => setKeyDismissed(true)}
+                className="text-zinc-500 hover:text-zinc-300 -mt-1 px-0"
+              >
+                <SkipForward className="w-3.5 h-3.5 mr-1.5" />
+                Skip — use OpenAI fallback
+              </Button>
+            </CardContent>
+          </Card>
+        )}
 
         {!generated ? (
           <Card className="bg-[#12121c] border-zinc-800/60">

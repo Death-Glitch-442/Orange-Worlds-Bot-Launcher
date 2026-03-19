@@ -7,6 +7,7 @@ import path from "path";
 import { storage } from "./storage";
 import { botManager, LLM_OPTIONS } from "./hubs-bot";
 import { moveCommandSchema, roomCommandSchema } from "@shared/schema";
+import { getEffectiveOpenRouterKey, getManualOpenRouterKey, setManualOpenRouterKey } from "./config-store";
 
 const BOT_CONFIGS = [
   { id: "bot1", emailKey: "HUBS_BOT_EMAIL", passKey: "HUBS_BOT_PASSWORD" },
@@ -176,9 +177,16 @@ export async function registerRoutes(
 
   app.get("/api/integrations/status", (_req, res) => {
     res.json({
-      openrouter: !!process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY,
+      openrouter: !!getEffectiveOpenRouterKey(),
+      openrouterManual: !!getManualOpenRouterKey(),
       openai: !!process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
     });
+  });
+
+  app.post("/api/integrations/openrouter-key", (req, res) => {
+    const { key } = req.body;
+    setManualOpenRouterKey(key || null);
+    res.json({ ok: true });
   });
 
   app.post("/api/setup/generate", (_req, res) => {

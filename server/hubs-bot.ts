@@ -3,16 +3,21 @@ import OpenAI from "openai";
 import { storage } from "./storage";
 import type { BotStatus } from "@shared/schema";
 import { log } from "./index";
+import { getEffectiveOpenRouterKey, getEffectiveOpenRouterBaseURL } from "./config-store";
 
 const openai = new OpenAI({
   apiKey: process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
   baseURL: process.env.AI_INTEGRATIONS_OPENAI_BASE_URL,
 });
 
-const openrouter = new OpenAI({
-  apiKey: process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY,
-  baseURL: process.env.AI_INTEGRATIONS_OPENROUTER_BASE_URL,
-});
+function getOpenRouterClient(): OpenAI | null {
+  const key = getEffectiveOpenRouterKey();
+  if (!key) return null;
+  return new OpenAI({
+    apiKey: key,
+    baseURL: getEffectiveOpenRouterBaseURL(),
+  });
+}
 
 const CHROMIUM_PATH = "/nix/store/zi4f80l169xlmivz8vja8wlphq74qqk0-chromium-125.0.6422.141/bin/chromium";
 const HUBS_BASE_URL = "https://worlds.orangeweb3.com";
@@ -223,9 +228,15 @@ async function getAIResponse(
       ? `${personality.prompt}\nYour name in this world is "${botName}".`
       : `${BOT_SYSTEM_PROMPT}\nYour name in this world is "${botName}".`;
     const temperature = personality ? personality.temperature : 0.9;
-    const model = overrideModel || (personality ? personality.model : "gpt-4o-mini");
-    const provider = overrideProvider || personality?.provider || "openai";
-    const client = provider === "openrouter" ? openrouter : openai;
+    const requestedProvider = overrideProvider || personality?.provider || "openai";
+    const openrouterClient = getOpenRouterClient();
+    const provider = requestedProvider === "openrouter" && !openrouterClient ? "openai" : requestedProvider;
+    const model = overrideModel
+      ? overrideModel
+      : provider === "openai" && requestedProvider === "openrouter"
+        ? "gpt-4o-mini"
+        : (personality ? personality.model : "gpt-4o-mini");
+    const client = provider === "openrouter" ? openrouterClient! : openai;
 
     const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
       { role: "system", content: systemPrompt },
