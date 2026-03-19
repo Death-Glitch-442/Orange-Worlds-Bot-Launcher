@@ -611,6 +611,7 @@ export default function Dashboard() {
             </div>
           </div>
           <div className="flex items-center gap-2">
+            <div className="flex flex-col items-end gap-0.5">
             <Button
               data-testid="button-start-all"
               onClick={startAllBots}
@@ -620,6 +621,8 @@ export default function Dashboard() {
               <PlayCircle className="w-3.5 h-3.5 mr-1" />
               Start All
             </Button>
+            <span className="text-[10px] text-zinc-600">bots launch 60s apart</span>
+            </div>
             <Button
               data-testid="button-stop-all"
               onClick={stopAllBots}
