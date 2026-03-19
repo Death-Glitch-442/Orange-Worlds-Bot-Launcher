@@ -653,7 +653,7 @@ export default function Dashboard() {
                 data-testid="input-room-url"
                 value={roomUrl}
                 onChange={(e) => setRoomUrl(e.target.value)}
-                placeholder="https://worlds.orangeweb3.com/ABC123/room-name"
+                placeholder="Paste the URL to the Orange Worlds room you would like to launch your bot in"
                 className="bg-zinc-900/60 border-zinc-700/60 text-zinc-200 placeholder:text-zinc-600 focus:border-violet-500/50 focus:ring-violet-500/20"
               />
             </div>
