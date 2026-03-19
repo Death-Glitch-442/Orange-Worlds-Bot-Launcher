@@ -610,8 +610,8 @@ export default function Dashboard() {
               <p className="text-xs text-zinc-500">Multi-Bot Control Panel</p>
             </div>
           </div>
-          <div className="flex items-center gap-2">
-            <div className="flex flex-col items-end gap-0.5">
+          <div className="flex items-start gap-2">
+            <div className="flex flex-col items-center gap-0.5">
             <Button
               data-testid="button-start-all"
               onClick={startAllBots}
@@ -621,7 +621,7 @@ export default function Dashboard() {
               <PlayCircle className="w-3.5 h-3.5 mr-1" />
               Start All
             </Button>
-            <span className="text-[10px] text-zinc-600">bots launch 20s apart</span>
+            <span className="text-[10px] text-zinc-600 whitespace-nowrap">20s stagger</span>
             </div>
             <Button
               data-testid="button-stop-all"
