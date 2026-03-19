@@ -313,7 +313,12 @@ export class HubsBot {
   }
 
   private isPageAlive(): boolean {
-    return !!(this.page && this.browser && !this.stopping);
+    if (!this.page || !this.browser || this.stopping) return false;
+    try {
+      return !this.page.isClosed();
+    } catch {
+      return false;
+    }
   }
 
   setOtherBotNames(names: string[]) {
@@ -718,6 +723,26 @@ export class HubsBot {
     }
   }
 
+  private async pauseRenderer(): Promise<void> {
+    if (!this.page) return;
+    try {
+      const paused = await this.page.evaluate(() => {
+        // Stop the Three.js render loop — the Phoenix WebSocket (chat) stays alive
+        const scene = (window as any).APP?.scene;
+        if (!scene) return false;
+        const renderer = (scene as any).renderer;
+        if (renderer?.setAnimationLoop) {
+          renderer.setAnimationLoop(null);
+          return true;
+        }
+        return false;
+      });
+      await storage.addLog(this.botId, paused ? 'Three.js render loop paused — saving memory' : 'Renderer pause skipped (not found)');
+    } catch (err: any) {
+      await storage.addLog(this.botId, `Renderer pause skipped: ${err.message}`);
+    }
+  }
+
   private async sanitizeDisplayNameInput(): Promise<void> {
     if (!this.page) return;
     try {
@@ -1066,6 +1091,10 @@ export class HubsBot {
       await this.updateStatus("connected", `Bot ready at: ${this.roomUrl}`, this.roomUrl);
       await this.dumpPageState("final-state");
       await storage.addLog(this.botId, "=== Room entry sequence complete ===");
+
+      // Pause the 3D render loop — saves significant CPU/memory while keeping
+      // the Phoenix WebSocket (chat) fully active
+      await this.pauseRenderer();
 
       await this.startAutoNav();
 
@@ -1521,10 +1550,18 @@ export class HubsBot {
       }
     } catch (err: any) {
       await storage.addLog(this.botId, `Chat monitor error: ${err.message}`);
+      const crashMsg = err.message || '';
+      if (crashMsg.includes('Session closed') || crashMsg.includes('detached Frame') || crashMsg.includes('Target closed') || crashMsg.includes('Execution context was destroyed')) {
+        await storage.addLog(this.botId, 'Page crashed during chat monitor — stopping bot');
+        this.autoNavRunning = false;
+        await this.updateStatus('error', 'Page crashed — click Start to rejoin');
+        await this.stop(true).catch(() => {});
+        return;
+      }
     }
 
-    if (this.autoNavRunning) {
-      this.chatMonitorInterval = setTimeout(() => this.runChatMonitorLoop(), 4000);
+    if (this.autoNavRunning && this.isPageAlive()) {
+      this.chatMonitorInterval = setTimeout(() => this.runChatMonitorLoop(), 8000);
     }
   }
 
@@ -1589,10 +1626,18 @@ export class HubsBot {
       }
     } catch (err: any) {
       await storage.addLog(this.botId, `Auto-nav action error: ${err.message}`);
+      const crashMsg = err.message || '';
+      if (crashMsg.includes('Session closed') || crashMsg.includes('detached Frame') || crashMsg.includes('Target closed') || crashMsg.includes('Execution context was destroyed')) {
+        await storage.addLog(this.botId, 'Page crashed — stopping bot for restart');
+        this.autoNavRunning = false;
+        await this.updateStatus('error', 'Page crashed — click Start to rejoin');
+        await this.stop(true).catch(() => {});
+        return;
+      }
     }
 
     if (this.autoNavRunning && this.isPageAlive()) {
-      const delay = 2000 + Math.floor(Math.random() * 3000);
+      const delay = 8000 + Math.floor(Math.random() * 7000);
       this.autoNavInterval = setTimeout(() => this.runAutoNavLoop(), delay);
     }
   }
