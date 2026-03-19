@@ -5,7 +5,7 @@ import crypto from "crypto";
 import fs from "fs";
 import path from "path";
 import { storage } from "./storage";
-import { botManager } from "./hubs-bot";
+import { botManager, LLM_OPTIONS } from "./hubs-bot";
 import { moveCommandSchema, roomCommandSchema } from "@shared/schema";
 
 const BOT_CONFIGS = [
@@ -52,7 +52,9 @@ function getSetupFilePath(): string {
   return path.join(process.cwd(), ".bot-credentials.json");
 }
 
-function loadGeneratedCredentials(): Record<string, { email: string; password: string; registered?: boolean; displayName?: string }> | null {
+type BotCredEntry = { email: string; password: string; registered?: boolean; displayName?: string; modelKey?: string };
+
+function loadGeneratedCredentials(): Record<string, BotCredEntry> | null {
   try {
     const filePath = getSetupFilePath();
     if (fs.existsSync(filePath)) {
@@ -64,7 +66,7 @@ function loadGeneratedCredentials(): Record<string, { email: string; password: s
   return null;
 }
 
-function saveGeneratedCredentials(creds: Record<string, { email: string; password: string; registered?: boolean; displayName?: string }>) {
+function saveGeneratedCredentials(creds: Record<string, BotCredEntry>) {
   const data = { _replId: process.env.REPL_ID || "", ...creds };
   fs.writeFileSync(getSetupFilePath(), JSON.stringify(data, null, 2));
 }
@@ -73,6 +75,14 @@ function persistBotDisplayName(botId: string, displayName: string) {
   const creds = loadGeneratedCredentials() || {};
   if (creds[botId]) {
     creds[botId] = { ...creds[botId], displayName };
+    saveGeneratedCredentials(creds);
+  }
+}
+
+function persistBotModel(botId: string, modelKey: string) {
+  const creds = loadGeneratedCredentials() || {};
+  if (creds[botId]) {
+    creds[botId] = { ...creds[botId], modelKey };
     saveGeneratedCredentials(creds);
   }
 }
@@ -144,6 +154,10 @@ function initBots() {
       const savedName = generated[id]?.displayName;
       if (savedName) {
         bot.setDisplayName(savedName).catch(() => {});
+      }
+      const savedModelKey = generated[id]?.modelKey;
+      if (savedModelKey) {
+        bot.setModelKey(savedModelKey);
       }
     }
   }
@@ -341,9 +355,30 @@ export async function registerRoutes(
         running: bot.isRunning(),
         autoNav: bot.isAutoNavActive(),
         displayName: bot.getDisplayName(),
+        modelKey: bot.getModelKey(),
       };
     }
     res.json(result);
+  });
+
+  app.get("/api/llm-options", (_req, res) => {
+    res.json(LLM_OPTIONS);
+  });
+
+  app.post("/api/bots/:botId/model", async (req, res) => {
+    try {
+      const bot = botManager.getBot(req.params.botId);
+      if (!bot) return res.status(404).json({ error: "Bot not found" });
+      const { modelKey } = req.body;
+      if (!modelKey || !LLM_OPTIONS[modelKey]) {
+        return res.status(400).json({ error: "Invalid modelKey" });
+      }
+      bot.setModelKey(modelKey);
+      persistBotModel(req.params.botId, modelKey);
+      res.json({ message: "Model updated", modelKey });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message });
+    }
   });
 
   app.post("/api/bots/start-all", async (req, res) => {

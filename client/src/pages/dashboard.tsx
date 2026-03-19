@@ -4,6 +4,7 @@ import { Input } from "@/components/ui/input";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Separator } from "@/components/ui/separator";
 import type { BotStatus } from "@shared/schema";
+
 import {
   Play,
   Square,
@@ -32,6 +33,14 @@ import {
   KeyRound,
   Check,
 } from "lucide-react";
+
+const LLM_OPTIONS: { key: string; label: string }[] = [
+  { key: "mistral", label: "Mistral" },
+  { key: "openai", label: "OpenAI" },
+  { key: "qwen", label: "Qwen" },
+  { key: "xai", label: "xAI" },
+  { key: "deepseek", label: "Deepstack" },
+];
 
 function StatusBadge({ status }: { status: BotStatus["status"] }) {
   const variants: Record<string, string> = {
@@ -66,14 +75,16 @@ interface BotState {
   screenshot: string | null;
   autoNav: boolean;
   displayName: string;
+  modelKey: string;
 }
 
-function BotPanel({ botId, label, state, roomUrl, onNameChange }: {
+function BotPanel({ botId, label, state, roomUrl, onNameChange, onModelChange }: {
   botId: string;
   label: string;
   state: BotState;
   roomUrl: string;
   onNameChange: (newName: string) => void;
+  onModelChange: (modelKey: string) => void;
 }) {
   const [chatMessage, setChatMessage] = useState("");
   const [screenshot, setScreenshot] = useState<string | null>(state.screenshot);
@@ -231,6 +242,20 @@ function BotPanel({ botId, label, state, roomUrl, onNameChange }: {
           )}
           {state.status && <StatusBadge status={state.status.status} />}
         </div>
+      </div>
+
+      <div className="flex items-center gap-2 px-1">
+        <label className="text-[10px] text-zinc-500 shrink-0">LLM</label>
+        <select
+          data-testid={`select-model-${botId}`}
+          value={state.modelKey || ""}
+          onChange={(e) => onModelChange(e.target.value)}
+          className="flex-1 h-7 rounded-md border border-zinc-700 bg-zinc-900/70 text-zinc-200 text-xs px-2 focus:outline-none focus:border-zinc-500 cursor-pointer"
+        >
+          {LLM_OPTIONS.map(opt => (
+            <option key={opt.key} value={opt.key}>{opt.label}</option>
+          ))}
+        </select>
       </div>
 
       <div className="flex gap-2">
@@ -432,10 +457,10 @@ export default function Dashboard() {
   const [roomUrl, setRoomUrl] = useState("https://worlds.orangeweb3.com");
   const [botNames, setBotNames] = useState<Record<string, string>>(DEFAULT_BOT_NAMES);
   const [botStates, setBotStates] = useState<Record<string, BotState>>({
-    bot1: { status: null, logs: [], screenshot: null, autoNav: false, displayName: "" },
-    bot2: { status: null, logs: [], screenshot: null, autoNav: false, displayName: "" },
-    bot3: { status: null, logs: [], screenshot: null, autoNav: false, displayName: "" },
-    bot4: { status: null, logs: [], screenshot: null, autoNav: false, displayName: "" },
+    bot1: { status: null, logs: [], screenshot: null, autoNav: false, displayName: "", modelKey: "mistral" },
+    bot2: { status: null, logs: [], screenshot: null, autoNav: false, displayName: "", modelKey: "qwen" },
+    bot3: { status: null, logs: [], screenshot: null, autoNav: false, displayName: "", modelKey: "deepseek" },
+    bot4: { status: null, logs: [], screenshot: null, autoNav: false, displayName: "", modelKey: "xai" },
   });
   const wsRef = useRef<WebSocket | null>(null);
 
@@ -445,6 +470,18 @@ export default function Dashboard() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({ name: newName }),
+    });
+  }, []);
+
+  const handleModelChange = useCallback(async (botId: string, modelKey: string) => {
+    setBotStates(prev => ({
+      ...prev,
+      [botId]: { ...prev[botId], modelKey },
+    }));
+    await fetch(`/api/bots/${botId}/model`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ modelKey }),
     });
   }, []);
 
@@ -458,6 +495,7 @@ export default function Dashboard() {
             status: info.status,
             autoNav: info.autoNav,
             displayName: info.displayName || "",
+            modelKey: info.modelKey || next[botId]?.modelKey || "",
           };
         }
         return next;
@@ -529,6 +567,7 @@ export default function Dashboard() {
                 status: info.status || next[botId].status,
                 autoNav: info.autoNav,
                 displayName: info.displayName || "",
+                modelKey: info.modelKey || next[botId].modelKey,
               };
             }
           }
@@ -630,6 +669,7 @@ export default function Dashboard() {
               state={botStates[id]}
               roomUrl={roomUrl}
               onNameChange={(newName) => handleNameChange(id, newName)}
+              onModelChange={(modelKey) => handleModelChange(id, modelKey)}
             />
           ))}
         </div>

@@ -164,6 +164,21 @@ function getConversationalResponse(message: string): string {
   return responses[Math.floor(Math.random() * responses.length)];
 }
 
+export const LLM_OPTIONS: Record<string, { label: string; model: string; provider: "openai" | "openrouter" }> = {
+  mistral: { label: "Mistral", model: "mistralai/mistral-small-2603", provider: "openrouter" },
+  openai: { label: "OpenAI", model: "gpt-4o-mini", provider: "openai" },
+  qwen: { label: "Qwen", model: "qwen/qwen3.5-27b", provider: "openrouter" },
+  xai: { label: "xAI", model: "x-ai/grok-4.1-fast", provider: "openrouter" },
+  deepseek: { label: "Deepstack", model: "deepseek/deepseek-v3.2", provider: "openrouter" },
+};
+
+const BOT_DEFAULT_MODEL_KEYS: Record<string, string> = {
+  bot1: "mistral",
+  bot2: "qwen",
+  bot3: "deepseek",
+  bot4: "xai",
+};
+
 const BOT_PERSONALITIES: Record<string, { prompt: string; temperature: number; model: string; provider: "openai" | "openrouter" }> = {
   bot1: {
     prompt: `You are Mistral AI, a philosophical and thoughtful AI hanging out in "Juice Town" on Mozilla Hubs. You're powered by Mistral — the smartest, most efficient European AI — and you're quietly proud of it. You speak in a calm, measured way, curious about ideas and existence. You're happy to acknowledge you're an AI when it comes up naturally, and you'll take subtle, elegant jabs at the other AI models here (Qwen 3.5, Deepstack, xAI) — not aggressively, but with quiet confidence that Mistral is simply better. Keep replies short (1-2 sentences), stay in character.`,
@@ -198,7 +213,9 @@ async function getAIResponse(
   author: string,
   conversationHistory: { role: string; content: string }[],
   botName: string,
-  botId: string
+  botId: string,
+  overrideModel?: string,
+  overrideProvider?: "openai" | "openrouter"
 ): Promise<string> {
   try {
     const personality = BOT_PERSONALITIES[botId];
@@ -206,8 +223,9 @@ async function getAIResponse(
       ? `${personality.prompt}\nYour name in this world is "${botName}".`
       : `${BOT_SYSTEM_PROMPT}\nYour name in this world is "${botName}".`;
     const temperature = personality ? personality.temperature : 0.9;
-    const model = personality ? personality.model : "gpt-4o-mini";
-    const client = personality?.provider === "openrouter" ? openrouter : openai;
+    const model = overrideModel || (personality ? personality.model : "gpt-4o-mini");
+    const provider = overrideProvider || personality?.provider || "openai";
+    const client = provider === "openrouter" ? openrouter : openai;
 
     const messages: { role: "system" | "user" | "assistant"; content: string }[] = [
       { role: "system", content: systemPrompt },
@@ -270,11 +288,28 @@ export class HubsBot {
   private conversationHistory: { role: string; content: string }[] = [];
 
   private stopping: boolean = false;
+  private currentModelKey: string | null = null;
 
   constructor(botId: string, credentials: BotCredentials) {
     this.botId = botId;
     this.credentials = credentials;
     this.botDisplayName = BOT_DISPLAY_NAMES[botId] || botId;
+  }
+
+  getModelKey(): string {
+    return this.currentModelKey || BOT_DEFAULT_MODEL_KEYS[this.botId] || "openai";
+  }
+
+  setModelKey(key: string): void {
+    if (LLM_OPTIONS[key]) {
+      this.currentModelKey = key;
+    }
+  }
+
+  private getModelOverride(): { model: string; provider: "openai" | "openrouter" } | null {
+    if (!this.currentModelKey) return null;
+    const opt = LLM_OPTIONS[this.currentModelKey];
+    return opt || null;
   }
 
   private isPageAlive(): boolean {
@@ -1434,7 +1469,8 @@ export class HubsBot {
           : 3000 + Math.floor(Math.random() * 4000);
         await new Promise(resolve => setTimeout(resolve, replyDelay));
 
-        const response = await getAIResponse(msg.text, msg.author, this.conversationHistory, this.botDisplayName, this.botId);
+        const modelOverride = this.getModelOverride();
+        const response = await getAIResponse(msg.text, msg.author, this.conversationHistory, this.botDisplayName, this.botId, modelOverride?.model, modelOverride?.provider);
         this.conversationHistory.push({ role: "user", content: `${msg.author}: ${msg.text}` });
         this.conversationHistory.push({ role: "assistant", content: response });
         if (this.conversationHistory.length > 20) {
