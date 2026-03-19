@@ -608,8 +608,8 @@ export default function Dashboard() {
         <div className="bg-amber-950/80 border-b border-amber-700/60 px-6 py-2.5 flex items-center gap-3 text-sm text-amber-200">
           <span className="text-amber-400 text-base">⚠</span>
           <span>
-            <strong>OpenRouter integration not connected.</strong> Bots will not respond with AI — they'll use scripted fallbacks.
-            To fix: in the Replit sidebar go to <strong>Tools → Integrations</strong>, search for <strong>OpenRouter</strong>, and enable it.
+            <strong>OpenRouter not enabled.</strong> Bots will use scripted fallbacks instead of real AI.
+            {" "}No API key needed — in the Replit sidebar go to <strong>Tools → Integrations</strong>, find <strong>OpenRouter</strong>, and click <strong>Enable</strong>. Usage is billed to your Replit credits.
           </span>
         </div>
       )}

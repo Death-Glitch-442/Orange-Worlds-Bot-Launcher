@@ -233,8 +233,8 @@ export default function SetupPage({ onComplete }: { onComplete: () => void }) {
         <div className="bg-amber-950/80 border-b border-amber-700/60 px-6 py-3 flex items-start gap-3 text-sm text-amber-200">
           <span className="text-amber-400 text-base mt-0.5">⚠</span>
           <span>
-            <strong>Step 0 — Connect OpenRouter:</strong> This project needs an OpenRouter integration to power bot AI responses.
-            In the Replit sidebar go to <strong>Tools → Integrations</strong>, search for <strong>OpenRouter</strong>, and enable it before proceeding.
+            <strong>Step 0 — Enable OpenRouter:</strong> Bots need this to generate real AI responses.
+            {" "}No API key required — in the Replit sidebar go to <strong>Tools → Integrations</strong>, find <strong>OpenRouter</strong>, and click <strong>Enable</strong>. Usage is billed to your Replit credits.
           </span>
         </div>
       )}
