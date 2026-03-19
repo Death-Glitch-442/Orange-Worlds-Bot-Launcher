@@ -1756,11 +1756,10 @@ export class BotManager {
 
   async startAll(roomUrl?: string): Promise<void> {
     const bots = Array.from(this.bots.values()).filter(b => !b.isRunning());
-    // Stagger bot starts by 60s each so their heavy WebGL/3D scene loading phases
-    // don't overlap and exhaust container memory. With 4 bots x 60s = all in room ~6min.
+    // Stagger bot starts by 20s each to avoid simultaneous heavy scene loading.
     const startPromises = bots.map((bot, index) => {
       return new Promise<void>(async (resolve) => {
-        await new Promise(r => setTimeout(r, index * 60000));
+        await new Promise(r => setTimeout(r, index * 20000));
         let attempts = 0;
         while (attempts < 3) {
           attempts++;

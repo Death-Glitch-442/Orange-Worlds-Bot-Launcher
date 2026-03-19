@@ -621,7 +621,7 @@ export default function Dashboard() {
               <PlayCircle className="w-3.5 h-3.5 mr-1" />
               Start All
             </Button>
-            <span className="text-[10px] text-zinc-600">bots launch 60s apart</span>
+            <span className="text-[10px] text-zinc-600">bots launch 20s apart</span>
             </div>
             <Button
               data-testid="button-stop-all"
