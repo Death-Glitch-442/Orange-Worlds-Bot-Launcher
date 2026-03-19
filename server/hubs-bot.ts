@@ -995,7 +995,7 @@ export class HubsBot {
       await this.handleSigninRedirect();
 
       // Step 2: Click "Accept" on the avatar/name configuration screen
-      await this.waitForButton(["accept"], 15);
+      await this.waitForButton(["accept"], 30);
       const clicked2 = await this.clickButtonByText(["accept"]);
       if (clicked2) {
         await this.updateStatus("logging_in", "Accepted avatar settings, waiting for entry screen...");
@@ -1004,7 +1004,7 @@ export class HubsBot {
       }
 
       // Step 3: Click "Enter Room" to actually join the 3D space
-      await this.waitForButton(["enter room"], 15);
+      await this.waitForButton(["enter room"], 30);
       const clicked3 = await this.clickButtonByText(["enter room"]);
       if (clicked3) {
         await this.updateStatus("connected", "Entered the room!");
