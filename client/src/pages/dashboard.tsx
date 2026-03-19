@@ -647,13 +647,14 @@ export default function Dashboard() {
       <div className="max-w-[1600px] mx-auto px-6 py-6 space-y-6">
         <Card className="bg-[#12121c] border-zinc-800/60">
           <CardContent className="pt-5 pb-4">
+            <p className="text-xs text-zinc-400 mb-2">Paste the URL to the Orange Worlds room you would like to launch your bot in</p>
             <div className="flex items-center gap-2">
               <Globe className="w-4 h-4 text-zinc-500 shrink-0" />
               <Input
                 data-testid="input-room-url"
                 value={roomUrl}
                 onChange={(e) => setRoomUrl(e.target.value)}
-                placeholder="Paste the URL to the Orange Worlds room you would like to launch your bot in"
+                placeholder="https://worlds.orangeweb3.com/ABC123/room-name"
                 className="bg-zinc-900/60 border-zinc-700/60 text-zinc-200 placeholder:text-zinc-600 focus:border-violet-500/50 focus:ring-violet-500/20"
               />
             </div>
