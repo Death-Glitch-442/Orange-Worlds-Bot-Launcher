@@ -1092,10 +1092,6 @@ export class HubsBot {
       await this.dumpPageState("final-state");
       await storage.addLog(this.botId, "=== Room entry sequence complete ===");
 
-      // Pause the 3D render loop — saves significant CPU/memory while keeping
-      // the Phoenix WebSocket (chat) fully active
-      await this.pauseRenderer();
-
       await this.startAutoNav();
 
       const greetingList = ENTRANCE_GREETINGS[this.botId] || ENTRANCE_GREETINGS.default;
