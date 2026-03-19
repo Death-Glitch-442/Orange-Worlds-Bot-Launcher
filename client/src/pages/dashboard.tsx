@@ -455,6 +455,7 @@ const DEFAULT_BOT_NAMES: Record<string, string> = {
 
 export default function Dashboard() {
   const [roomUrl, setRoomUrl] = useState("https://worlds.orangeweb3.com");
+  const [openrouterMissing, setOpenrouterMissing] = useState(false);
   const [botNames, setBotNames] = useState<Record<string, string>>(DEFAULT_BOT_NAMES);
   const [botStates, setBotStates] = useState<Record<string, BotState>>({
     bot1: { status: null, logs: [], screenshot: null, autoNav: false, displayName: "", modelKey: "mistral" },
@@ -486,6 +487,10 @@ export default function Dashboard() {
   }, []);
 
   useEffect(() => {
+    fetch("/api/integrations/status").then(r => r.json()).then((data: any) => {
+      setOpenrouterMissing(!data.openrouter);
+    }).catch(() => {});
+
     fetch("/api/bots").then(r => r.json()).then((data: Record<string, any>) => {
       setBotStates(prev => {
         const next = { ...prev };
@@ -599,6 +604,15 @@ export default function Dashboard() {
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-zinc-100">
+      {openrouterMissing && (
+        <div className="bg-amber-950/80 border-b border-amber-700/60 px-6 py-2.5 flex items-center gap-3 text-sm text-amber-200">
+          <span className="text-amber-400 text-base">⚠</span>
+          <span>
+            <strong>OpenRouter integration not connected.</strong> Bots will not respond with AI — they'll use scripted fallbacks.
+            To fix: in the Replit sidebar go to <strong>Tools → Integrations</strong>, search for <strong>OpenRouter</strong>, and enable it.
+          </span>
+        </div>
+      )}
       <div className="border-b border-zinc-800/80 bg-[#0e0e16]/80 backdrop-blur-sm sticky top-0 z-50">
         <div className="max-w-[1600px] mx-auto px-6 py-4 flex items-center justify-between">
           <div className="flex items-center gap-3">

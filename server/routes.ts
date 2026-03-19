@@ -174,6 +174,13 @@ export async function registerRoutes(
     res.json(status);
   });
 
+  app.get("/api/integrations/status", (_req, res) => {
+    res.json({
+      openrouter: !!process.env.AI_INTEGRATIONS_OPENROUTER_API_KEY,
+      openai: !!process.env.AI_INTEGRATIONS_OPENAI_API_KEY,
+    });
+  });
+
   app.post("/api/setup/generate", (_req, res) => {
     const existing = loadGeneratedCredentials() || {};
     const creds: Record<string, { email: string; password: string }> = { ...existing };

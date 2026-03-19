@@ -44,6 +44,7 @@ export default function SetupPage({ onComplete }: { onComplete: () => void }) {
   const [editEmail, setEditEmail] = useState("");
   const [editPassword, setEditPassword] = useState("");
   const [regResults, setRegResults] = useState<Record<string, RegistrationResult>>({});
+  const [openrouterMissing, setOpenrouterMissing] = useState(false);
 
   const checkStatus = async () => {
     try {
@@ -59,6 +60,9 @@ export default function SetupPage({ onComplete }: { onComplete: () => void }) {
 
   useEffect(() => {
     checkStatus();
+    fetch("/api/integrations/status").then(r => r.json()).then((data: any) => {
+      setOpenrouterMissing(!data.openrouter);
+    }).catch(() => {});
   }, []);
 
   const generateCredentials = async () => {
@@ -225,6 +229,15 @@ export default function SetupPage({ onComplete }: { onComplete: () => void }) {
 
   return (
     <div className="min-h-screen bg-[#0a0a0f] text-zinc-100">
+      {openrouterMissing && (
+        <div className="bg-amber-950/80 border-b border-amber-700/60 px-6 py-3 flex items-start gap-3 text-sm text-amber-200">
+          <span className="text-amber-400 text-base mt-0.5">⚠</span>
+          <span>
+            <strong>Step 0 — Connect OpenRouter:</strong> This project needs an OpenRouter integration to power bot AI responses.
+            In the Replit sidebar go to <strong>Tools → Integrations</strong>, search for <strong>OpenRouter</strong>, and enable it before proceeding.
+          </span>
+        </div>
+      )}
       <div className="max-w-3xl mx-auto px-6 py-12">
         <div className="text-center mb-10">
           <div className="w-16 h-16 rounded-2xl bg-gradient-to-br from-violet-500 to-fuchsia-600 flex items-center justify-center mx-auto mb-4">
