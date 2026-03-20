@@ -304,7 +304,7 @@ function BotPanel({ botId, label, state, roomUrl, onNameChange, onModelChange }:
             className="border-zinc-700 bg-zinc-900/40 hover:bg-zinc-700/60 text-[10px] h-6 px-2 disabled:opacity-30"
           >
             <Camera className="w-2.5 h-2.5 mr-1" />
-            Capture
+            Screenshot
           </Button>
         </CardHeader>
         <CardContent className="px-3 pb-3">
@@ -320,7 +320,7 @@ function BotPanel({ botId, label, state, roomUrl, onNameChange, onModelChange }:
               <div className="text-center text-zinc-600">
                 <Camera className="w-6 h-6 mx-auto mb-1 opacity-30" />
                 <p className="text-[10px]">
-                  {isConnected ? "Click Capture" : "Not connected"}
+                  {isConnected ? "Click Screenshot" : "Not connected"}
                 </p>
               </div>
             )}
