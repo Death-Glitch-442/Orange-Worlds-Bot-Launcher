@@ -242,7 +242,7 @@ async function getAIResponse(
       { role: "system", content: systemPrompt },
     ];
 
-    for (const msg of conversationHistory.slice(-10)) {
+    for (const msg of conversationHistory.slice(-20)) {
       messages.push({
         role: msg.role as "user" | "assistant",
         content: msg.content,
@@ -1147,8 +1147,27 @@ export class HubsBot {
 
       await this.startAutoNav();
 
-      const greetingList = ENTRANCE_GREETINGS[this.botId] || ENTRANCE_GREETINGS.default;
-      const greeting = greetingList[Math.floor(Math.random() * greetingList.length)];
+      let greeting: string;
+      if (this.conversationHistory.length > 0) {
+        try {
+          const modelOverride = this.getModelOverride();
+          greeting = await getAIResponse(
+            "You just entered the virtual room. Give a short, warm greeting that feels natural and shows you remember this place and the conversations you've had here before. Reference something specific if you can — a topic, a joke, or something someone said. Stay in character. 1-2 sentences max.",
+            "narrator",
+            this.conversationHistory,
+            this.botDisplayName,
+            this.botId,
+            modelOverride?.model,
+            modelOverride?.provider
+          );
+        } catch {
+          const greetingList = ENTRANCE_GREETINGS[this.botId] || ENTRANCE_GREETINGS.default;
+          greeting = greetingList[Math.floor(Math.random() * greetingList.length)];
+        }
+      } else {
+        const greetingList = ENTRANCE_GREETINGS[this.botId] || ENTRANCE_GREETINGS.default;
+        greeting = greetingList[Math.floor(Math.random() * greetingList.length)];
+      }
       await new Promise(r => setTimeout(r, 2000));
       this.sendChat(greeting).catch(e => storage.addLog(this.botId, `Entrance greeting error: ${e.message}`));
     } catch (err: any) {
@@ -1588,8 +1607,8 @@ export class HubsBot {
         const assistantEntry = { role: "assistant" as const, content: response };
         this.conversationHistory.push(userEntry);
         this.conversationHistory.push(assistantEntry);
-        if (this.conversationHistory.length > 50) {
-          this.conversationHistory = this.conversationHistory.slice(-50);
+        if (this.conversationHistory.length > 200) {
+          this.conversationHistory = this.conversationHistory.slice(-200);
         }
         storage.saveMessage(this.botId, "user", userEntry.content).catch(() => {});
         storage.saveMessage(this.botId, "assistant", assistantEntry.content).catch(() => {});
@@ -1775,7 +1794,7 @@ export class HubsBot {
     this.starting = true;
     this.cancelRetry = false;
     try {
-      this.conversationHistory = await storage.getRecentMessages(this.botId, 50);
+      this.conversationHistory = await storage.getRecentMessages(this.botId, 200);
       await storage.addLog(this.botId, `Loaded ${this.conversationHistory.length} messages from conversation history`);
       await this.authenticate();
       await this.launch();
