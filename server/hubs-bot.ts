@@ -287,6 +287,7 @@ export class HubsBot {
   private authToken: string | null = null;
   private statusListeners: Set<(status: BotStatus) => void> = new Set();
   private starting: boolean = false;
+  private cancelRetry: boolean = false;
   private lastScreenshot: string | null = null;
   private autoNavInterval: ReturnType<typeof setTimeout> | null = null;
   private autoNavRunning: boolean = false;
@@ -1718,13 +1719,16 @@ export class HubsBot {
     this.authToken = null;
     this.starting = false;
     this.stopping = false;
+    this.cancelRetry = true;
     if (!preserveError) {
       await this.updateStatus("idle", "Bot stopped");
     }
   }
 
   async start(roomUrl?: string): Promise<void> {
+    if (this.starting || this.browser) return;
     this.starting = true;
+    this.cancelRetry = false;
     try {
       await this.authenticate();
       await this.launch();
@@ -1740,6 +1744,10 @@ export class HubsBot {
 
   isRunning(): boolean {
     return this.browser !== null || this.starting;
+  }
+
+  isCancelRetry(): boolean {
+    return this.cancelRetry;
   }
 }
 
@@ -1778,6 +1786,7 @@ export class BotManager {
             if (attempts < 3) {
               await storage.addLog(bot.botId, `Start failed (attempt ${attempts}), retrying in 60s...`);
               await new Promise(r => setTimeout(r, 60000));
+              if (bot.isCancelRetry()) break;
             }
           }
         }
