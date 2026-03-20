@@ -1157,6 +1157,7 @@ export class HubsBot {
       await this.dumpPageState("final-state");
       await storage.addLog(this.botId, "=== Room entry sequence complete ===");
       await this.autoScreenshot("room-ready");
+      this.startScreenshotInterval();
 
       await this.startAutoNav();
 
@@ -1561,6 +1562,20 @@ export class HubsBot {
     }
   }
 
+  private startScreenshotInterval(): void {
+    if (this.screenshotInterval) return;
+    this.screenshotInterval = setInterval(async () => {
+      if (!this.stopping) await this.autoScreenshot("periodic");
+    }, 5 * 60 * 1000);
+  }
+
+  private stopScreenshotInterval(): void {
+    if (this.screenshotInterval) {
+      clearInterval(this.screenshotInterval);
+      this.screenshotInterval = null;
+    }
+  }
+
   private async getBotDisplayName(): Promise<string> {
     if (!this.page) return "";
     try {
@@ -1786,6 +1801,7 @@ export class HubsBot {
       clearTimeout(this.chatMonitorInterval);
       this.chatMonitorInterval = null;
     }
+    this.stopScreenshotInterval();
     await this.stopMovement().catch(() => {});
     this.seenChatMessages.clear();
     this.conversationHistory = [];
