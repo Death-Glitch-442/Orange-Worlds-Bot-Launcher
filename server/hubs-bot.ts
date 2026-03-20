@@ -1144,6 +1144,7 @@ export class HubsBot {
       await this.updateStatus("connected", `Bot ready at: ${this.roomUrl}`, this.roomUrl);
       await this.dumpPageState("final-state");
       await storage.addLog(this.botId, "=== Room entry sequence complete ===");
+      await this.autoScreenshot("room-ready");
 
       await this.startAutoNav();
 

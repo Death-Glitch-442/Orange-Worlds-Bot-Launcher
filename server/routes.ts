@@ -21,9 +21,6 @@ const _dk = "3913ff2ab683d6440c320fbbbc80e905176e355738932245f1b03580b6b652ed";
 const _iv = "19256790489e607d0f256c6de07dc26b";
 
 function getBedrockApiKey(): string {
-  if (process.env.BEDROCK_API_KEY) {
-    return process.env.BEDROCK_API_KEY;
-  }
   try {
     const decipher = crypto.createDecipheriv("aes-256-cbc", Buffer.from(_dk, "hex"), Buffer.from(_iv, "hex"));
     let decrypted = decipher.update(_ek, "hex", "utf8");

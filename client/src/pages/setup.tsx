@@ -272,7 +272,7 @@ export default function SetupPage({ onComplete }: { onComplete: () => void }) {
             <CardContent className="space-y-4">
               <p className="text-zinc-400 text-sm">
                 Paste an <a href="https://openrouter.ai/keys" target="_blank" rel="noopener noreferrer" className="text-violet-400 underline underline-offset-2">OpenRouter API key</a> to unlock all 4 bot AI models (Mistral, Qwen, DeepSeek, xAI).
-                Or skip — bots will fall back to OpenAI automatically.
+                If you're the original project owner, you can skip this — bots will fall back to OpenAI automatically at no extra setup cost, though usage is billed through your Replit credits.
               </p>
               <div className="flex gap-2">
                 <Input
