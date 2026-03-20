@@ -1,4 +1,9 @@
 import type { BotStatus } from "@shared/schema";
+import { botChatHistory } from "@shared/schema";
+import { db } from "./db";
+import { desc, eq } from "drizzle-orm";
+
+export type ChatMessage = { role: "user" | "assistant"; content: string };
 
 export interface IStorage {
   getBotStatus(botId: string): Promise<BotStatus>;
@@ -6,9 +11,12 @@ export interface IStorage {
   getLogs(botId: string): Promise<string[]>;
   addLog(botId: string, message: string): Promise<void>;
   getAllBotIds(): string[];
+  saveMessage(botId: string, role: "user" | "assistant", content: string): Promise<void>;
+  getRecentMessages(botId: string, limit?: number): Promise<ChatMessage[]>;
+  clearHistory(botId: string): Promise<void>;
 }
 
-export class MemStorage implements IStorage {
+class Storage implements IStorage {
   private botStatuses: Map<string, BotStatus> = new Map();
   private botLogs: Map<string, string[]> = new Map();
 
@@ -56,6 +64,39 @@ export class MemStorage implements IStorage {
   getAllBotIds(): string[] {
     return Array.from(this.botStatuses.keys());
   }
+
+  async saveMessage(botId: string, role: "user" | "assistant", content: string): Promise<void> {
+    try {
+      await db.insert(botChatHistory).values({ botId, role, content });
+    } catch (err: any) {
+      console.error(`Failed to save chat message for ${botId}: ${err.message}`);
+    }
+  }
+
+  async getRecentMessages(botId: string, limit = 50): Promise<ChatMessage[]> {
+    try {
+      const rows = await db
+        .select()
+        .from(botChatHistory)
+        .where(eq(botChatHistory.botId, botId))
+        .orderBy(desc(botChatHistory.createdAt))
+        .limit(limit);
+      return rows
+        .reverse()
+        .map(r => ({ role: r.role as "user" | "assistant", content: r.content }));
+    } catch (err: any) {
+      console.error(`Failed to load chat history for ${botId}: ${err.message}`);
+      return [];
+    }
+  }
+
+  async clearHistory(botId: string): Promise<void> {
+    try {
+      await db.delete(botChatHistory).where(eq(botChatHistory.botId, botId));
+    } catch (err: any) {
+      console.error(`Failed to clear chat history for ${botId}: ${err.message}`);
+    }
+  }
 }
 
-export const storage = new MemStorage();
+export const storage = new Storage();

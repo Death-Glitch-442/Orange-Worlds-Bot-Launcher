@@ -1584,11 +1584,15 @@ export class HubsBot {
 
         const modelOverride = this.getModelOverride();
         const response = await getAIResponse(msg.text, msg.author, this.conversationHistory, this.botDisplayName, this.botId, modelOverride?.model, modelOverride?.provider);
-        this.conversationHistory.push({ role: "user", content: `${msg.author}: ${msg.text}` });
-        this.conversationHistory.push({ role: "assistant", content: response });
-        if (this.conversationHistory.length > 20) {
-          this.conversationHistory = this.conversationHistory.slice(-20);
+        const userEntry = { role: "user" as const, content: `${msg.author}: ${msg.text}` };
+        const assistantEntry = { role: "assistant" as const, content: response };
+        this.conversationHistory.push(userEntry);
+        this.conversationHistory.push(assistantEntry);
+        if (this.conversationHistory.length > 50) {
+          this.conversationHistory = this.conversationHistory.slice(-50);
         }
+        storage.saveMessage(this.botId, "user", userEntry.content).catch(() => {});
+        storage.saveMessage(this.botId, "assistant", assistantEntry.content).catch(() => {});
         await this.sendChat(response);
         this.lastChatResponseTime = Date.now();
       }
@@ -1771,6 +1775,8 @@ export class HubsBot {
     this.starting = true;
     this.cancelRetry = false;
     try {
+      this.conversationHistory = await storage.getRecentMessages(this.botId, 50);
+      await storage.addLog(this.botId, `Loaded ${this.conversationHistory.length} messages from conversation history`);
       await this.authenticate();
       await this.launch();
       await this.loginToHubs(roomUrl);

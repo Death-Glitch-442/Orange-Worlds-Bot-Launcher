@@ -1,4 +1,6 @@
 import { z } from "zod";
+import { pgTable, serial, text, timestamp } from "drizzle-orm/pg-core";
+import { createInsertSchema } from "drizzle-zod";
 
 export const botStatusSchema = z.object({
   status: z.enum(["idle", "authenticating", "launching", "logging_in", "connected", "navigating", "error", "disconnected"]),
@@ -29,3 +31,19 @@ export type RoomCommand = z.infer<typeof roomCommandSchema>;
 export const users = {} as any;
 export type User = { id: string; username: string; password: string };
 export type InsertUser = { username: string; password: string };
+
+export const botChatHistory = pgTable("bot_chat_history", {
+  id: serial("id").primaryKey(),
+  botId: text("bot_id").notNull(),
+  role: text("role").notNull(),
+  content: text("content").notNull(),
+  createdAt: timestamp("created_at").defaultNow().notNull(),
+});
+
+export const insertBotChatHistorySchema = createInsertSchema(botChatHistory).omit({
+  id: true,
+  createdAt: true,
+});
+
+export type BotChatHistory = typeof botChatHistory.$inferSelect;
+export type InsertBotChatHistory = z.infer<typeof insertBotChatHistorySchema>;
