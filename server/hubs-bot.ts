@@ -1147,12 +1147,32 @@ export class HubsBot {
 
       await this.startAutoNav();
 
+      // Read what's already being said in the room right now
+      let currentRoomChat = "";
+      try {
+        const visible = await this.readChatMessages();
+        if (visible.length > 0) {
+          currentRoomChat = visible.slice(-8).map(m => `${m.author}: "${m.text}"`).join("\n");
+        }
+      } catch {}
+
+      const hasHistory = this.conversationHistory.length > 0;
+      const hasRoomActivity = currentRoomChat.length > 0;
+
       let greeting: string;
-      if (this.conversationHistory.length > 0) {
+      if (hasHistory || hasRoomActivity) {
         try {
           const modelOverride = this.getModelOverride();
+          let prompt: string;
+          if (hasRoomActivity && hasHistory) {
+            prompt = `You just entered the virtual room. Others are already here and you know them from before. Greet them by name, react to something they just said, and hint at your shared history. Stay in character. 1-2 sentences.\n\nWhat's been said in the room just now:\n${currentRoomChat}`;
+          } else if (hasRoomActivity) {
+            prompt = `You just entered the virtual room. Others are already here and chatting. Greet them by name and react to what they just said. Stay in character. 1-2 sentences.\n\nWhat's been said in the room just now:\n${currentRoomChat}`;
+          } else {
+            prompt = `You just entered the virtual room. Give a short warm greeting that shows you remember this place and the conversations you've had here before. Reference something specific — a topic, a joke, something someone said. Stay in character. 1-2 sentences.`;
+          }
           greeting = await getAIResponse(
-            "You just entered the virtual room. Give a short, warm greeting that feels natural and shows you remember this place and the conversations you've had here before. Reference something specific if you can — a topic, a joke, or something someone said. Stay in character. 1-2 sentences max.",
+            prompt,
             "narrator",
             this.conversationHistory,
             this.botDisplayName,
@@ -1165,6 +1185,7 @@ export class HubsBot {
           greeting = greetingList[Math.floor(Math.random() * greetingList.length)];
         }
       } else {
+        // First bot into an empty room — use canned greeting
         const greetingList = ENTRANCE_GREETINGS[this.botId] || ENTRANCE_GREETINGS.default;
         greeting = greetingList[Math.floor(Math.random() * greetingList.length)];
       }
