@@ -1812,10 +1812,10 @@ export class BotManager {
 
   async startAll(roomUrl?: string): Promise<void> {
     const bots = Array.from(this.bots.values()).filter(b => !b.isRunning());
-    // Stagger bot starts by 20s each to avoid simultaneous heavy scene loading.
+    // Stagger bot starts by 8s each to avoid simultaneous heavy scene loading.
     const startPromises = bots.map((bot, index) => {
       return new Promise<void>(async (resolve) => {
-        await new Promise(r => setTimeout(r, index * 20000));
+        await new Promise(r => setTimeout(r, index * 8000));
         let attempts = 0;
         while (attempts < 3) {
           attempts++;
