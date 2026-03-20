@@ -89,6 +89,11 @@ function BotPanel({ botId, label, state, roomUrl, onNameChange, onModelChange }:
   const [chatMessage, setChatMessage] = useState("");
   const [screenshot, setScreenshot] = useState<string | null>(state.screenshot);
   const logsEndRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (state.screenshot) setScreenshot(state.screenshot);
+  }, [state.screenshot]);
+
   const logsContainerRef = useRef<HTMLDivElement>(null);
   const [starting, setStarting] = useState(false);
   const [editingName, setEditingName] = useState(false);
@@ -538,6 +543,15 @@ export default function Dashboard() {
             [msg.botId]: {
               ...(prev[msg.botId] || { logs: [], screenshot: null, autoNav: false, displayName: "" }),
               status: msg.data,
+            },
+          }));
+        }
+        if (msg.type === "screenshot" && msg.botId) {
+          setBotStates(prev => ({
+            ...prev,
+            [msg.botId]: {
+              ...(prev[msg.botId] || { logs: [], screenshot: null, autoNav: false, displayName: "" }),
+              screenshot: msg.data,
             },
           }));
         }

@@ -286,6 +286,7 @@ export class HubsBot {
   private page: Page | null = null;
   private authToken: string | null = null;
   private statusListeners: Set<(status: BotStatus) => void> = new Set();
+  private screenshotListeners: Set<(screenshot: string) => void> = new Set();
   private starting: boolean = false;
   private cancelRetry: boolean = false;
   private lastScreenshot: string | null = null;
@@ -366,6 +367,11 @@ export class HubsBot {
     return () => this.statusListeners.delete(listener);
   }
 
+  onScreenshot(listener: (screenshot: string) => void) {
+    this.screenshotListeners.add(listener);
+    return () => this.screenshotListeners.delete(listener);
+  }
+
   private async updateStatus(status: BotStatus["status"], message: string, roomUrl?: string) {
     const botStatus: BotStatus = {
       status,
@@ -387,7 +393,12 @@ export class HubsBot {
       const screenshot = await this.page.screenshot({ encoding: "base64", type: "jpeg", quality: 50 });
       this.lastScreenshot = `data:image/jpeg;base64,${screenshot}`;
       await storage.addLog(this.botId, `[screenshot taken: ${label}]`);
-    } catch {}
+      for (const listener of this.screenshotListeners) {
+        listener(this.lastScreenshot);
+      }
+    } catch (err: any) {
+      await storage.addLog(this.botId, `[screenshot failed: ${label}] ${err.message}`);
+    }
   }
 
   async authenticate(): Promise<string> {

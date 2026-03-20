@@ -349,6 +349,13 @@ export async function registerRoutes(
       });
       unsubscribers.push(unsub);
 
+      const unsubScreenshot = bot.onScreenshot((screenshot) => {
+        if (ws.readyState === WebSocket.OPEN) {
+          ws.send(JSON.stringify({ type: "screenshot", botId, data: screenshot }));
+        }
+      });
+      unsubscribers.push(unsubScreenshot);
+
       storage.getBotStatus(botId).then((status) => {
         if (ws.readyState === WebSocket.OPEN) {
           ws.send(JSON.stringify({ type: "status", botId, data: status }));
