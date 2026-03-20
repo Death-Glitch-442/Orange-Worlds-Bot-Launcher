@@ -294,6 +294,7 @@ export class HubsBot {
   private autoNavRunning: boolean = false;
   private roomUrl: string = HUBS_BASE_URL;
   private chatMonitorInterval: ReturnType<typeof setTimeout> | null = null;
+  private screenshotInterval: ReturnType<typeof setInterval> | null = null;
   private seenChatMessages: Set<string> = new Set();
   private lastChatResponseTime: number = 0;
   private botDisplayName: string = "";
