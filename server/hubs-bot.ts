@@ -631,6 +631,18 @@ export class HubsBot {
       await this.updateStatus("connected", `Bot ready at: ${finalUrl}`, finalUrl);
     } catch (err: any) {
       await this.autoScreenshot("error-state");
+      if (this.isContextError(err)) {
+        // Frame detached during login — check if we actually made it into the room
+        await storage.addLog(this.botId, `Context error during login (${err.message}) — checking if we made it through...`);
+        await new Promise(r => setTimeout(r, 3000));
+        try {
+          const url = this.page?.url() || "";
+          if (url && url.includes("orangeweb3.com") && url !== "about:blank") {
+            await this.updateStatus("connected", `Bot ready at: ${url}`, url);
+            return;
+          }
+        } catch {}
+      }
       await this.updateStatus("error", `Login failed: ${err.message}`);
       throw err;
     }
@@ -642,19 +654,27 @@ export class HubsBot {
     for (let i = 0; i < 15; i++) {
       await new Promise(resolve => setTimeout(resolve, 2000));
 
-      const state = await this.page.evaluate(() => {
-        const allButtons = Array.from(document.querySelectorAll("button"));
-        const buttonTexts = allButtons.map(b => (b.textContent || "").trim()).filter(t => t.length > 0);
-        const hasCanvas = !!document.querySelector("canvas");
-        const hasScene = !!document.querySelector("a-scene");
-        const allDivs = document.querySelectorAll("div").length;
-        const allSpans = document.querySelectorAll("span").length;
-        const inputCount = document.querySelectorAll("input").length;
-        const bodyLength = document.body?.innerText?.length || 0;
-        const iframes = document.querySelectorAll("iframe").length;
-        const shadowHosts = Array.from(document.querySelectorAll("*")).filter(el => el.shadowRoot).length;
-        return { buttonTexts, hasCanvas, hasScene, inputCount, buttonCount: allButtons.length, allDivs, allSpans, bodyLength, iframes, shadowHosts };
-      });
+      let state: any;
+      try {
+        state = await this.page.evaluate(() => {
+          const allButtons = Array.from(document.querySelectorAll("button"));
+          const buttonTexts = allButtons.map(b => (b.textContent || "").trim()).filter(t => t.length > 0);
+          const hasCanvas = !!document.querySelector("canvas");
+          const hasScene = !!document.querySelector("a-scene");
+          const allDivs = document.querySelectorAll("div").length;
+          const allSpans = document.querySelectorAll("span").length;
+          const inputCount = document.querySelectorAll("input").length;
+          const bodyLength = document.body?.innerText?.length || 0;
+          const iframes = document.querySelectorAll("iframe").length;
+          const shadowHosts = Array.from(document.querySelectorAll("*")).filter(el => el.shadowRoot).length;
+          return { buttonTexts, hasCanvas, hasScene, inputCount, buttonCount: allButtons.length, allDivs, allSpans, bodyLength, iframes, shadowHosts };
+        });
+      } catch (err: any) {
+        if (!this.isContextError(err)) throw err;
+        // Frame briefly detached (page navigating) — skip this check iteration
+        await storage.addLog(this.botId, `Wait ${i + 1}/15: page context briefly unavailable, retrying...`);
+        continue;
+      }
 
       await storage.addLog(this.botId,
         `Wait ${i + 1}/15: btns=${state.buttonCount}(${state.buttonTexts.slice(0, 5).join(", ")}) canvas=${state.hasCanvas} scene=${state.hasScene} divs=${state.allDivs} spans=${state.allSpans} bodyLen=${state.bodyLength} iframes=${state.iframes} shadowHosts=${state.shadowHosts}`
@@ -778,23 +798,37 @@ export class HubsBot {
     }
   }
 
+  private isContextError(err: any): boolean {
+    const msg: string = err?.message || String(err);
+    return msg.includes("detached Frame") ||
+      msg.includes("Execution context was destroyed") ||
+      msg.includes("Target closed") ||
+      msg.includes("Session closed") ||
+      msg.includes("Protocol error");
+  }
+
   private async waitForButton(textPatterns: string[], maxWaitSecs: number): Promise<boolean> {
     if (!this.page) return false;
     for (let i = 0; i < maxWaitSecs; i++) {
-      const found = await this.page.evaluate((patterns: string[]) => {
-        const elements = Array.from(document.querySelectorAll("button, a[role='button'], [role='button']"));
-        for (const pattern of patterns) {
-          const lowerPattern = pattern.toLowerCase();
-          for (const el of elements) {
-            const text = (el.textContent || "").trim().toLowerCase();
-            if (text === lowerPattern || text.includes(lowerPattern)) {
-              return true;
+      try {
+        const found = await this.page.evaluate((patterns: string[]) => {
+          const elements = Array.from(document.querySelectorAll("button, a[role='button'], [role='button']"));
+          for (const pattern of patterns) {
+            const lowerPattern = pattern.toLowerCase();
+            for (const el of elements) {
+              const text = (el.textContent || "").trim().toLowerCase();
+              if (text === lowerPattern || text.includes(lowerPattern)) {
+                return true;
+              }
             }
           }
-        }
-        return false;
-      }, textPatterns);
-      if (found) return true;
+          return false;
+        }, textPatterns);
+        if (found) return true;
+      } catch (err: any) {
+        if (!this.isContextError(err)) throw err;
+        // Frame briefly detached during navigation — wait and retry
+      }
       await new Promise(resolve => setTimeout(resolve, 1000));
     }
     await storage.addLog(this.botId, `Waited ${maxWaitSecs}s but didn't find buttons: ${textPatterns.join(", ")}`);
@@ -804,27 +838,34 @@ export class HubsBot {
   private async clickButtonByText(textPatterns: string[]): Promise<string | null> {
     if (!this.page) return null;
 
-    const clicked = await this.page.evaluate((patterns: string[]) => {
-      const elements = Array.from(document.querySelectorAll("button, [role='button']"));
-      for (const pattern of patterns) {
-        const lowerPattern = pattern.toLowerCase();
-        for (const el of elements) {
-          const text = (el.textContent || "").trim().toLowerCase();
-          if (text === lowerPattern) {
-            (el as HTMLElement).click();
-            return (el.textContent || "").trim();
+    let clicked: string | null = null;
+    try {
+      clicked = await this.page.evaluate((patterns: string[]) => {
+        const elements = Array.from(document.querySelectorAll("button, [role='button']"));
+        for (const pattern of patterns) {
+          const lowerPattern = pattern.toLowerCase();
+          for (const el of elements) {
+            const text = (el.textContent || "").trim().toLowerCase();
+            if (text === lowerPattern) {
+              (el as HTMLElement).click();
+              return (el.textContent || "").trim();
+            }
+          }
+          for (const el of elements) {
+            const text = (el.textContent || "").trim().toLowerCase();
+            if (text.includes(lowerPattern) && text.length < 40) {
+              (el as HTMLElement).click();
+              return (el.textContent || "").trim();
+            }
           }
         }
-        for (const el of elements) {
-          const text = (el.textContent || "").trim().toLowerCase();
-          if (text.includes(lowerPattern) && text.length < 40) {
-            (el as HTMLElement).click();
-            return (el.textContent || "").trim();
-          }
-        }
-      }
-      return null;
-    }, textPatterns);
+        return null;
+      }, textPatterns);
+    } catch (err: any) {
+      if (!this.isContextError(err)) throw err;
+      // Frame detached — click may have triggered a navigation, treat as success
+      return textPatterns[0];
+    }
 
     if (clicked) {
       await storage.addLog(this.botId, `Clicked button with text: "${clicked}"`);
